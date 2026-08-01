@@ -64,7 +64,22 @@ PYTHONPATH=src python scripts/nhc0801_teacher_runner.py --plan-only
 PYTHONPATH=src python scripts/nhc0801_teacher_runner.py --frames-per-endpoint 2
 ```
 
+## D3 + weighted dataset (mindmap residual path, dry-run)
+
+| Item | Status |
+| --- | --- |
+| D3 module | `pipeline/d3_projection.py` → `g001/d3/` |
+| Weighted writer | `pipeline/weighted_dataset_writer.py` → `g001/datasets/weighted/` |
+| CLI chain | `scripts/nhc0801_d3_weighted_dry_run.py` |
+| Audit | reuses `data/weighted_dataset.audit_weighted_dataset` |
+| Live D3/PySCF | **closed** |
+
+```bash
+PYTHONPATH=src python scripts/nhc0801_d3_weighted_dry_run.py \
+  --nhc0801-root runs/local_nhc0801 --frames-per-endpoint 2
+```
+
 ## Next unique engineering step
 
-Mindmap 顺序下一步工程：**D3 投影消费层 / 加权数据集写入骨架**（仍可 dry-run），  
-或 multi-seed trainer（步骤 4–5）。Live teacher 仅在 claim PASS + 授权后接真引擎。
+Mindmap **步骤 3**：epoch-0 全路线骨架（dry-run / 接 handoff + sci-val 合同），  
+或 **步骤 4–5** multi-seed trainer 循环。Live 仍需 claim + 分项授权。

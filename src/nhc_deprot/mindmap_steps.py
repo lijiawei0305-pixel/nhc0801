@@ -27,20 +27,21 @@ MINDMAP_IMPLEMENTATION: Final = {
         "notes": "Sealed Final Test commitment only; do not open identities",
     },
     2: {
-        "title": "Pure-PySCF teacher frames",
+        "title": "Pure-PySCF teacher frames + D3 residual + weighted NPZ",
         "modules": [
             "nhc_deprot.pipeline.teacher_runner",
+            "nhc_deprot.pipeline.d3_projection",
+            "nhc_deprot.pipeline.weighted_dataset_writer",
             "nhc_deprot.generation.layout",
             "nhc_deprot.resources.worker_pool",
-            "nhc_deprot.resources.claim",
-            "nhc_deprot.data.teacher_frames",
-            "nhc_deprot.contracts.parent_protocol",
+            "nhc_deprot.data.weight_policy",
             "scripts/nhc0801_teacher_runner.py",
+            "scripts/nhc0801_d3_weighted_dry_run.py",
         ],
-        "status": "dry_run_runner_ready",
+        "status": "dry_run_teacher_d3_weighted_ready",
         "notes": (
-            "dry-run writes synthetic frames under g001/teacher via worker_pool; "
-            "live PySCF engine not wired; requires teacher_pyscf_authorized"
+            "dry-run: teacher→frozen D3 receipts→weighted NPZ under g001; "
+            "no silent D3 recompute; live PySCF/D3 not wired"
         ),
     },
     3: {
