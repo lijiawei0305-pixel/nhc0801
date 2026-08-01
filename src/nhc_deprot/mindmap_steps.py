@@ -63,30 +63,45 @@ MINDMAP_IMPLEMENTATION: Final = {
     4: {
         "title": "Train AIMNet2 on Train frames",
         "modules": [
+            "nhc_deprot.training.multi_seed_trainer",
+            "nhc_deprot.training.config",
             "nhc_deprot.training.weighted_loss",
             "nhc_deprot.training.trainer_adapter",
             "nhc_deprot.data.weighted_dataset",
+            "scripts/nhc0801_train_dry_run.py",
         ],
-        "status": "adapter_only",
-        "notes": "No live training; residual D3 targets required; dataset reader ready",
+        "status": "dry_run_loop_ready",
+        "notes": (
+            "multi-seed dry-run over g001 weighted NPZ; "
+            "live needs aimnet2_train_authorized + torch backend"
+        ),
     },
     5: {
         "title": "Multi-epoch checkpoints",
-        "modules": [],
-        "status": "missing",
-        "notes": "Need new trainer loop; do not reuse historical finetune best-by-val-loss",
+        "modules": [
+            "nhc_deprot.training.multi_seed_trainer",
+            "nhc_deprot.contracts.tvt_gates.quick_checkpoint_shortlist",
+        ],
+        "status": "dry_run_loop_ready",
+        "notes": "all outcomes retained; ckpt meta only in dry-run; no best-by-val final select",
     },
     6: {
         "title": "Quick validation on stored frames",
-        "modules": ["nhc_deprot.training.weighted_loss.WeightedEvaluationAccumulator"],
-        "status": "loss_ready",
+        "modules": [
+            "nhc_deprot.training.multi_seed_trainer",
+            "nhc_deprot.training.weighted_loss.WeightedEvaluationAccumulator",
+        ],
+        "status": "wired_in_trainer_dry_run",
         "notes": "Must not select final model",
     },
     7: {
         "title": "Shortlist checkpoints",
-        "modules": ["nhc_deprot.contracts.tvt_gates.quick_checkpoint_shortlist"],
-        "status": "gates_ready",
-        "notes": "",
+        "modules": [
+            "nhc_deprot.contracts.tvt_gates.quick_checkpoint_shortlist",
+            "nhc_deprot.training.multi_seed_trainer",
+        ],
+        "status": "wired_in_trainer_dry_run",
+        "notes": "per-seed shortlist only; final selection still sci-val",
     },
     8: {
         "title": "Full scientific validation route",

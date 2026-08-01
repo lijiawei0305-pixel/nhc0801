@@ -10,7 +10,7 @@ Updated: 2026-08-01 (scientific Validation writer + README + GitHub)
 | P1 Freeze roots + split | Partial | Pilot 3+2 + sealed FT |
 | P2 Teacher Pure-PySCF | Not started (pilot data exists) | Live gen needs auth |
 | P3 Epoch-0 baseline | Dry-run ready | `pipeline/epoch0_runner.py`; live NOT_RUN |
-| P4 AIMNet2 training | Blocked | Needs source freeze + epoch-0 + auth |
+| P4 AIMNet2 training | Dry-run ready | multi_seed_trainer; live needs auth + backend |
 | P5 Sci Validation / select | Writer ready | Live route needs engines + gate |
 | P6 Freeze + Final Test | Not started | Sealed |
 
@@ -96,7 +96,24 @@ PYTHONPATH=src python scripts/nhc0801_epoch0_dry_run.py \
   --nhc0801-root runs/local_nhc0801
 ```
 
+## Multi-seed trainer (mindmap 4–5, dry-run)
+
+| Item | Status |
+| --- | --- |
+| Config | `training/config.py` (seeds/epochs/lr frozen defaults) |
+| Loop | `training/multi_seed_trainer.py` |
+| CLI | `scripts/nhc0801_train_dry_run.py` |
+| Data | reads `g001/datasets/weighted` |
+| Policy | quick-val **never** final select; retain all seed/epoch outcomes |
+| Live | Closed (`aimnet2_train_authorized` + non-dry backend) |
+
+```bash
+PYTHONPATH=src python scripts/nhc0801_train_dry_run.py \
+  --nhc0801-root runs/local_nhc0801 --bootstrap-data --epochs 5
+```
+
 ## Next unique engineering step
 
-Mindmap **步骤 4–5**：multi-seed trainer 循环骨架（dry-run / adapter；quick-val 永不终选）。  
-Live epoch-0 / 训练仍需资源 claim + 分项授权。
+接 live 前：资源 claim 采样器 + 真 PySCF/AIMNet2 引擎接线；  
+或实现 **步骤 8 live sci-val 引擎** 与 epoch-0 授权执行包。  
+科学顺序上 live 仍应：claim → teacher/D3 实算 → epoch-0 → 再 train。
