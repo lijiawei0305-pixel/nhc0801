@@ -21,7 +21,7 @@ Updated: 2026-08-01 (scientific Validation writer + README + GitHub)
 | NUMERIC_CALIBRATION_… | RESOLVED |
 | FULL_SCIENTIFIC_VALIDATION_WRITER_… | **RESOLVED** (writer implemented; live gated) |
 | WEIGHTED_DEVELOPMENT_DATASET | RESOLVED (pilot evidence) |
-| SOURCE_COMMIT_NOT_FROZEN | OPEN until first clean git commit |
+| SOURCE_COMMIT_NOT_FROZEN | **RESOLVED** at `2b5216ed214dfeec3c2be5c00b160fdb90f0a221` |
 | EPOCH_ZERO_… | OPEN |
 | LIVE_TRAINING_NOT_AUTHORIZED | OPEN (default) |
 | LIVE_RESOURCE_CLAIM | OPEN if CPUs busy |
