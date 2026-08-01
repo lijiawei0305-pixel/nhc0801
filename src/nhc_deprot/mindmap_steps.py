@@ -47,13 +47,18 @@ MINDMAP_IMPLEMENTATION: Final = {
     3: {
         "title": "Epoch-0 baseline full route",
         "modules": [
+            "nhc_deprot.pipeline.epoch0_runner",
+            "nhc_deprot.pipeline.scientific_validation",
             "nhc_deprot.pipeline.parent_handoff",
             "nhc_deprot.resources.profiles",
             "docs/contracts/GAU_LOOSE_V001.yaml",
-            "docs/contracts/RESOURCE_PROFILES_V001.yaml",
+            "scripts/nhc0801_epoch0_dry_run.py",
         ],
-        "status": "writer_static_only",
-        "notes": "execution NOT_RUN; requires claim PASS + epoch0_execution",
+        "status": "dry_run_runner_ready",
+        "notes": (
+            "dry-run: pure ref + official _0 route on Validation roots under g001/epoch0; "
+            "live requires epoch0_execution + real engines + claim"
+        ),
     },
     4: {
         "title": "Train AIMNet2 on Train frames",

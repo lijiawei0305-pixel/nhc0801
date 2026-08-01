@@ -9,7 +9,7 @@ Updated: 2026-08-01 (scientific Validation writer + README + GitHub)
 | P0.5 Sci-Val writer | Complete | `pipeline/scientific_validation.py` (live engines gated) |
 | P1 Freeze roots + split | Partial | Pilot 3+2 + sealed FT |
 | P2 Teacher Pure-PySCF | Not started (pilot data exists) | Live gen needs auth |
-| P3 Epoch-0 baseline | Not started | Contract ready; NOT_RUN |
+| P3 Epoch-0 baseline | Dry-run ready | `pipeline/epoch0_runner.py`; live NOT_RUN |
 | P4 AIMNet2 training | Blocked | Needs source freeze + epoch-0 + auth |
 | P5 Sci Validation / select | Writer ready | Live route needs engines + gate |
 | P6 Freeze + Final Test | Not started | Sealed |
@@ -79,7 +79,24 @@ PYTHONPATH=src python scripts/nhc0801_d3_weighted_dry_run.py \
   --nhc0801-root runs/local_nhc0801 --frames-per-endpoint 2
 ```
 
+## Epoch-0 (mindmap 3, dry-run)
+
+| Item | Status |
+| --- | --- |
+| Module | `pipeline/epoch0_runner.py` |
+| CLI | `scripts/nhc0801_epoch0_dry_run.py` |
+| Scope | Validation roots only (pilot 2) |
+| Routes | Pure-PySCF reference **and** official `_0` AIMNet2 → GAU_LOOSE → handoff → parent GAU |
+| Weight identity | `OFFICIAL_AIMNET2_WEIGHT_SHA256` (`aimnet2_wb97m_d3_0`) |
+| Live | Closed (`epoch0_execution` + non-simulated engines) |
+
+```bash
+PYTHONPATH=src python scripts/nhc0801_epoch0_dry_run.py --plan-only
+PYTHONPATH=src python scripts/nhc0801_epoch0_dry_run.py \
+  --nhc0801-root runs/local_nhc0801
+```
+
 ## Next unique engineering step
 
-Mindmap **步骤 3**：epoch-0 全路线骨架（dry-run / 接 handoff + sci-val 合同），  
-或 **步骤 4–5** multi-seed trainer 循环。Live 仍需 claim + 分项授权。
+Mindmap **步骤 4–5**：multi-seed trainer 循环骨架（dry-run / adapter；quick-val 永不终选）。  
+Live epoch-0 / 训练仍需资源 claim + 分项授权。
