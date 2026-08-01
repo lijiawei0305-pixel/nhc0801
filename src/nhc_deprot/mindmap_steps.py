@@ -29,17 +29,18 @@ MINDMAP_IMPLEMENTATION: Final = {
     2: {
         "title": "Pure-PySCF teacher frames",
         "modules": [
+            "nhc_deprot.pipeline.teacher_runner",
             "nhc_deprot.generation.layout",
             "nhc_deprot.resources.worker_pool",
             "nhc_deprot.resources.claim",
             "nhc_deprot.data.teacher_frames",
-            "nhc_deprot.data.weighted_dataset",
             "nhc_deprot.contracts.parent_protocol",
+            "scripts/nhc0801_teacher_runner.py",
         ],
-        "status": "layout_and_resource_model_ready",
+        "status": "dry_run_runner_ready",
         "notes": (
-            "parallel S: single_27 default, dual after claim+receipt; "
-            "teacher live runner not yet; pilot frames legacy-readonly"
+            "dry-run writes synthetic frames under g001/teacher via worker_pool; "
+            "live PySCF engine not wired; requires teacher_pyscf_authorized"
         ),
     },
     3: {

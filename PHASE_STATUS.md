@@ -49,8 +49,22 @@ teacher DFT / epoch-0 / AIMNet2 train / sci-val **live** / Final Test / write ou
 | CLI | `scripts/nhc0801_init_generation.py`, `nhc0801_resource_claim_eval.py` |
 | Live chemistry | **still closed** |
 
+## Teacher runner (mindmap 2)
+
+| Item | Status |
+| --- | --- |
+| Module | `pipeline/teacher_runner.py` |
+| CLI | `scripts/nhc0801_teacher_runner.py` |
+| Mode | **dry-run default** → synthetic frames + receipts under `g001/teacher/` |
+| Pool | `worker_pool` root claims; cation→neutral per root |
+| Live | Closed (`teacher_pyscf_authorized` + non-dry engine required) |
+
+```bash
+PYTHONPATH=src python scripts/nhc0801_teacher_runner.py --plan-only
+PYTHONPATH=src python scripts/nhc0801_teacher_runner.py --frames-per-endpoint 2
+```
+
 ## Next unique engineering step
 
-Local dry-run: init `runs/local_nhc0801/runs/nhc0801-g001`.  
-Then: teacher runner skeleton (still gated) **or** multi-seed trainer loop — user pick.  
-Live: wait claim PASS + explicit `teacher_pyscf_authorized` / `epoch0_execution`.
+Mindmap 顺序下一步工程：**D3 投影消费层 / 加权数据集写入骨架**（仍可 dry-run），  
+或 multi-seed trainer（步骤 4–5）。Live teacher 仅在 claim PASS + 授权后接真引擎。
