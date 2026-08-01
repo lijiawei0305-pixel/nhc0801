@@ -1,6 +1,6 @@
 # AGENTS.md — NHC0801 / nhc-deprot
 
-Mindmap-driven AIMNet2 fine-tune on **Parent-Level P01** teacher frames.
+Mindmap-driven AIMNet2 fine-tune on **Parent-Level P01** teacher frames.  
 Local: `/Users/cc/nhc-deprot`. Server writes: **only** `$WJW/NHC0801`.
 
 Not a continuation of `nhc-deprot-ranker` Phase 9B. Not production `two_endpoint`.
@@ -9,81 +9,116 @@ Not a continuation of `nhc-deprot-ranker` Phase 9B. Not production `two_endpoint
 
 ## Before any code change
 
-1. Read **`mindmap.md`** (science truth) + this file + **`PHASE_STATUS.md`**.
-2. Map work to a **mindmap step 0–12** (table below). Do not skip gates.
-3. Prefer `src/nhc_deprot/` modules; never write outside `$WJW/NHC0801` on the server.
-4. Run `PYTHONPATH=src python -m pytest -q` after code changes.
-5. Live chemistry / training / Final Test only with **explicit user authorization**.
+1. Read **`mindmap.md`** + this file + **`PHASE_STATUS.md`**.
+2. Skim **`RETRO.md`** for similar past failures (same category).
+3. Map work to a **mindmap step 0–12**. Do not skip gates.
+4. If the task is non-trivial: write a short plan under **`docs/plans/`** *before* vibe coding.
+5. Put new files only where **Where to put files** allows.
+6. Run `PYTHONPATH=src python -m pytest -q` after code changes.
+7. Live chemistry / training / Final Test only with **explicit user authorization**.
 
-Conflict order: **mindmap.md** → frozen YAML/JSON SHA bindings → this file → pilot evidence.
+Conflict order: **mindmap.md** → frozen YAML/JSON → this file → `RETRO.md` lessons → pilot evidence.
 
 ---
 
-## Mindmap steps (implement against these)
+## Where to put files（落盘硬规则）
 
-| Step | What | NHC0801 modules / status |
+| 内容 | 目录 | 命名 / 说明 |
+| --- | --- | --- |
+| **可 import 库代码** | `src/nhc_deprot/` | 包内模块；按域：`contracts/` `data/` `pipeline/` `training/` `resources/` |
+| **单元测试** | `tests/` | `test_<topic>.py`；合成 fixture，不依赖 HPC |
+| **CLI / 作业入口** | `scripts/` | 薄封装 only；逻辑在 `src/`。见 `scripts/README.md` |
+| **动手前的规划** | `docs/plans/` | `YYYYMMDD_<topic>_plan.md`。见 `docs/plans/README.md` |
+| **冻结合同** | `docs/contracts/` | 版本化 YAML/JSON（GAU_LOOSE、数值标定等） |
+| **科学讨论 / 阻塞说明** | `docs/science/` | 非合同正文 |
+| **pilot 证据（改名后）** | `docs/evidence/` | 只读绑定；勿再堆 phase9b 文件名 |
+| **禁止栈 / 历史干扰** | `docs/archive/` | 只读隔离，不当协议源 |
+| **阶段勾选** | `PHASE_STATUS.md` | 根目录；完成一步更新一行 |
+| **工程踩坑复盘** | `RETRO.md` | 根目录；格式见该文件维护规则 |
+| **科学流水线真值** | `mindmap.md` | 根目录；改口径先改它 |
+| **协作者入口** | `README.md` | 中文学术说明；勿替代 mindmap |
+| **私人配置** | `configs/*.local.yaml`, `private/` | **永不提交** |
+| **运行产物** | `runs/`, `reports/`, `models/checkpoints/` | 默认 gitignore；服务器写 `$WJW/NHC0801/...` |
+| **临时草稿** | **禁止长期放仓库根** | 用完删，或迁入 `docs/plans/` / `RETRO.md` |
+
+**禁止：**
+
+- 在仓库根目录乱放 `tmp_*.py`、未命名 `plan.md`、大段实验脚本  
+- 把库逻辑只写在 `scripts/` 而不进 `src/`  
+- 把规划写进 `src/` 或把合同写进 `RETRO.md`  
+- 修改 ranker / science-pilot 源树或 `$WJW` 非 NHC0801 路径  
+
+---
+
+## Documentation rules（写文档规矩）
+
+| 文档 | 何时写 / 更新 |
+| --- | --- |
+| `docs/plans/*` | **写代码前**（多步任务、改科学口径、新模块） |
+| `RETRO.md` | 踩坑后追加；同类问题先查再改 |
+| `PHASE_STATUS.md` | 阶段完成或阻塞变化时 |
+| `docs/contracts/*` | 冻结/升版合同时（需用户确认若改科学阈值） |
+| `README.md` | 对外说明 mindmap 与用法；保持学术中文主叙述 |
+| `AGENTS.md` | 仅增删**可执行规则**；不贴长文交接 |
+
+写文档要求：完整句子、中文可用；**短而可执行**；不复制 README 全文进 AGENTS。  
+合同类用版本后缀（`_V001`）；升版不静默改旧文件语义。
+
+---
+
+## Mindmap steps（实现对照）
+
+| Step | What | Modules / status |
 | ---: | --- | --- |
-| **0** | Freeze molecular roots (cation+neutral, SHA, charge/mult) | `data/paths`, `data/development_split` — pilot 5 roots frozen |
-| **1** | Split by **molecular_root**: Train ∩ Val ∩ Test = ∅ | `contracts/tvt_gates`, `data/development_split` — FT **sealed only** |
-| **2** | Pure-PySCF teacher frames (geom/E/F every step) | `data/teacher_frames`, `data/weighted_dataset` — pilot frames on server; scale gen not ported |
-| **3** | Epoch-0: official AIMNet2 → **GAU_LOOSE** → handoff → full parent GAU | `pipeline/parent_handoff` — contract OK; **execution NOT_RUN** |
-| **4** | Train AIMNet2 on **Train frames only** (residual E/F after frozen D3) | `training/weighted_loss`, `data/weighted_dataset` — **no live train** |
-| **5** | Multi-epoch checkpoints (retain all seeds/outcomes) | trainer loop **missing** |
-| **6** | Quick Validation on fixed Val frames (no new DFT; **not** final select) | `WeightedEvaluationAccumulator` ready |
-| **7** | Shortlist few checkpoints | `tvt_gates.quick_checkpoint_shortlist` |
-| **8** | Full scientific Validation route per shortlist | **largest gap** — writer not implemented |
-| **9** | Val selects one checkpoint (numeric addendum) | `tvt_gates.select_scientific_checkpoint` + `NUMERIC_CALIBRATION_V001.yaml` |
-| **10** | Freeze identities (ckpt SHA, splits, protocols, commit) | readiness gates |
-| **11** | Final Test **once** | sealed commitment only; identities closed |
-| **12** | No post-Test model shopping | policy fail-closed |
+| **0** | Freeze molecular roots | `data/paths`, `data/development_split` |
+| **1** | Split by molecular_root；FT sealed | `contracts/tvt_gates`, `data/development_split` |
+| **2** | Pure-PySCF teacher frames | `data/teacher_frames`, `data/weighted_dataset` |
+| **3** | Epoch-0 full route | `pipeline/parent_handoff` — exec NOT_RUN |
+| **4** | Train on Train frames only | `training/*` — no live train |
+| **5** | Multi-epoch checkpoints | trainer loop **missing** |
+| **6** | Quick val（非终选） | `weighted_loss` accumulator |
+| **7** | Shortlist | `tvt_gates.quick_checkpoint_shortlist` |
+| **8** | Full scientific Validation | `pipeline/scientific_validation` — writer ready, live gated |
+| **9** | Val selects checkpoint | sci-val + `NUMERIC_CALIBRATION_V001.yaml` |
+| **10** | Freeze identities | readiness gates |
+| **11** | Final Test once | sealed only |
+| **12** | No post-Test shopping | policy |
 
-Orchestrator (preflight only):  
-`PYTHONPATH=src python -m nhc_deprot.pipeline.mindmap_orchestrator`
-
-Routing table: `src/nhc_deprot/mindmap_steps.py`.
+Routing: `src/nhc_deprot/mindmap_steps.py`  
+Preflight: `PYTHONPATH=src python -m nhc_deprot.pipeline.mindmap_orchestrator`
 
 ---
 
 ## Science non-negotiables
 
-- Reaction: `NHC-H+ → NHC + H+`. Endpoints: cation (+1,s), neutral (0,s).
-- **Parent = P01 only**: gas RKS, `wb97m-d3bj` / `def2-TZVPP`, grid=4, SCF 1e-9.  
-  SHA256 `227c22a527e567bc4de873ab743fe9f493779eccbb1a698d2913c87695ebf87a`.
-- **GAU_LOOSE** (AIMNet2 stop): 5 criteria + ASE LBFGS fmax **0.10** eV/Å, max 100.  
-  Not VASP “0.1”. Not production fmax **0.05**.
-- Route: freeze geom → AIMNet2 to GAU_LOOSE → gates → exact-byte handoff → **full** parent opt to GAU → SP → label. `single_point_only` always false.
-- Labels: `(E_n - E_c)*627.509474 - 6.28` kcal/mol; **AIMNet2 energy never in labels**.
-- Train targets: residual short-range E/F after frozen two-body D3(BJ); no silent D3 recompute.
-- Quick-val **must not** choose the final model.
-
-### Forbidden (attention + code)
+- Reaction `NHC-H+ → NHC + H+`；cation (+1,s) / neutral (0,s)；root 不跨 split。
+- **Parent = P01 only**: `wb97m-d3bj` / `def2-TZVPP`，grid=4，SCF 1e-9。  
+  SHA256 `227c22a527e567bc4de873ab743fe9f493779eccbb1a698d2913c87695ebf87a`。
+- **GAU_LOOSE**: 五准则 + ASE fmax **0.10** eV/Å，max 100。非 fmax **0.05**。
+- 路线：freeze → AIMNet2 GAU_LOOSE → gates → exact-byte handoff → **完整** parent GAU → SP → label。  
+  `single_point_only=false`；**AIMNet2 能量永不进标签**。
+- 训练目标：冻结 D3 残差 E/F；禁止静默重算 D3。
+- Quick-val **不得**最终选模。
 
 | Banned | Why |
 | --- | --- |
-| Production `two_endpoint` B3LYP/def2-SVP | Wrong parent theory |
+| `two_endpoint` B3LYP/def2-SVP | Wrong parent |
 | fmax=0.05 as parent stop | Wrong AIMNet2 contract |
-| Historical finetune “best by quick-val loss” | Violates mindmap 6–9 |
-| Opening Final Test identities for “dev convenience” | Leak / selection bias |
-| Writing outside `$WJW/NHC0801` | Boundary |
-
-Archived B3LYP materials: `docs/archive/forbidden_b3lyp_stack/` (do not use).  
-Ban helpers: `contracts/forbidden_stacks.py`.
+| Best-by-quick-val finetune | Violates mindmap 6–9 |
+| Open Final Test for “dev convenience” | Leak / bias |
+| Write outside `$WJW/NHC0801` | Boundary |
 
 ---
 
-## Gates (default all closed)
+## Gates（默认全关）
 
 ```text
-teacher_pyscf_authorized: false
-aimnet2_train_authorized: false
-epoch0_execution: false
-final_test_open: false
-scientific_validation_live: false
-modify_wjw_outside_NHC0801: false
-scheduler_submission: false
+teacher_pyscf_authorized / aimnet2_train_authorized / epoch0_execution
+scientific_validation_live / final_test_open
+modify_wjw_outside_NHC0801 / scheduler_submission
 ```
 
-Allowed without new auth: local code/tests/docs; read-only SSH inventory; rsync **into** NHC0801 (no `--delete`).
+允许：本地代码·测试·文档；只读 SSH；rsync **进** NHC0801（无 `--delete`）。
 
 ---
 
@@ -91,12 +126,11 @@ Allowed without new auth: local code/tests/docs; read-only SSH inventory; rsync 
 
 | | |
 | --- | --- |
-| SSH | alias in `configs/server.local.yaml` (default `nhc614`) — never commit secrets |
+| SSH | `configs/server.local.yaml`（勿提交） |
 | Write root | `/home/plab/test/WJW/NHC0801` |
-| ML env | `source $WJW/env/envs/mlff.sh` |
-| PySCF env | `source $WJW/env/envs/molenv.sh` (never mix stacks) |
-| Epoch-0 weight | `~/.cache/aimnet/aimnet2_wb97m_d3_0.pt` only (not `$WJW/checkpoints/*.pt`) |
-| Pilot frames | `$WJW/data/runs/autofill_*` + weighted NPZ product (read-only) |
+| ML | `source $WJW/env/envs/mlff.sh` |
+| PySCF | `source $WJW/env/envs/molenv.sh`（禁混栈） |
+| Epoch-0 weight | `aimnet2_wb97m_d3_0.pt` only |
 
 ```bash
 rsync -avz --exclude '.git/' --exclude '__pycache__/' --exclude '.venv/' \
@@ -106,39 +140,19 @@ rsync -avz --exclude '.git/' --exclude '__pycache__/' --exclude '.venv/' \
 
 ---
 
-## Key paths
+## RETRO.md 义务
 
-| Path | Role |
-| --- | --- |
-| `mindmap.md` | Science pipeline truth |
-| `docs/contracts/GAU_LOOSE_V001.yaml` | AIMNet2 stop contract |
-| `docs/contracts/NUMERIC_CALIBRATION_V001.yaml` | Val selection thresholds (frozen) |
-| `docs/evidence/pilot_day1/` | Renamed pilot split/results (use these) |
-| `docs/archive/forbidden_b3lyp_stack/` | Quarantined wrong stack |
-| `src/nhc_deprot/` | All new code |
-
----
-
-## Training blockers (current)
-
-| Code | How to clear |
-| --- | --- |
-| `SOURCE_COMMIT_NOT_FROZEN` | `git init` + clean commit; record SHA |
-| `EPOCH_ZERO_…_NOT_AVAILABLE` | Authorized epoch-0 full route + receipt |
-| `NUMERIC_CALIBRATION_…` | **Done** — `NUMERIC_CALIBRATION_V001.yaml` |
-| `FULL_SCIENTIFIC_VALIDATION_WRITER_…` | Implement mindmap 8 writer (next hard gap) |
-| `LIVE_RESOURCE_CLAIM_…` | Wait for free CPUs; re-claim (V002 was REJECTED) |
-| `LIVE_TRAINING_NOT_AUTHORIZED` | User must open `aimnet2_train_authorized` |
-
-Diagnose: `PYTHONPATH=src python -c "from nhc_deprot.pipeline.training_blockers import *; print(format_readiness_report(assess_training_readiness()))"`
+- 新踩坑：**追加**到 `RETRO.md` 对应分类末尾（现象 / 根因 / `[已解决|未解决]` / 方案）。
+- 已固化进本文件的条目，在 RETRO 标 **「已升级为规则」** 并指向本节。
+- 不要把 RETRO 当第二 mindmap；科学冲突仍听 `mindmap.md`。
 
 ---
 
 ## Work style
 
-- One science/split/auth change at a time; confirm with user if it widens scope.
-- Synthetic fixtures in tests; no HPC required for unit tests.
-- Do not `git reset/clean` science-pilot or modify ranker production trees.
-- Prefer implementing the next **missing mindmap module** over expanding scope.
+- 一次只动一个会改变科学口径 / split / 授权 的点。
+- 单测用合成 fixture；`PYTHONPATH=src`。
+- 不 `git reset/clean` science-pilot；不改 ranker 生产树。
+- 优先补齐 mindmap 缺口模块，而非扩大范围。
 
-**Next hard engineering gap:** full scientific Validation writer (steps 8–9), then multi-seed trainer loop that never final-selects on quick-val.
+**Next engineering gap:** multi-seed trainer loop（步骤 4–5），且永不靠 quick-val 终选。

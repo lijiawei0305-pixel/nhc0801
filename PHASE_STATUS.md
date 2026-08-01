@@ -30,6 +30,13 @@ Updated: 2026-08-01 (scientific Validation writer + README + GitHub)
 
 teacher DFT / epoch-0 / AIMNet2 train / sci-val **live** / Final Test / write outside NHC0801
 
+## Process hygiene (2026-08-01)
+
+- `AGENTS.md`: 落盘硬规则 + 写文档规矩
+- `RETRO.md`: 工程复盘日志（踩坑先查）
+- `docs/plans/`: vibe coding 前规划
+- `scripts/`: CLI 薄封装 only
+
 ## Next unique engineering step
 
 Multi-seed trainer loop (mindmap 4–5) that retains all outcomes and never final-selects on quick-val; then authorized epoch-0 execution.
