@@ -285,9 +285,11 @@ def assemble_weighted_dataset(
                     raise WeightedDatasetWriterError(f"NPZ exists and differs: {path}")
             else:
                 path.write_bytes(raw)
+            # Manifest paths must be relative to datasets_dir (audit joins root + path)
+            rel_posix = f"{split}/{rel_name}"
             files[split].append(
                 {
-                    "path": str(path),
+                    "path": rel_posix,
                     "bytes": len(raw),
                     "sha256": sha256_bytes(raw),
                     "atom_count": atom_count,
