@@ -12,12 +12,13 @@ MINDMAP_IMPLEMENTATION: Final = {
     0: {
         "title": "Freeze molecular roots",
         "modules": [
+            "nhc_deprot.generation.layout",
             "nhc_deprot.data.paths",
             "nhc_deprot.data.development_split",
-            "docs/extracted/v004/*_DEVELOPMENT_SPLIT*",
+            "docs/evidence/pilot_day1/DEVELOPMENT_SPLIT.json",
         ],
         "status": "partial",
-        "notes": "5 development roots frozen in V004; bulk roots not frozen",
+        "notes": "scope C: pilot 5 roots; generation tree nhc0801-g001",
     },
     1: {
         "title": "Train/Val/Test by molecular_root",
@@ -28,24 +29,29 @@ MINDMAP_IMPLEMENTATION: Final = {
     2: {
         "title": "Pure-PySCF teacher frames",
         "modules": [
+            "nhc_deprot.generation.layout",
+            "nhc_deprot.resources.worker_pool",
+            "nhc_deprot.resources.claim",
             "nhc_deprot.data.teacher_frames",
             "nhc_deprot.data.weighted_dataset",
-            "nhc_deprot.data.weight_policy",
             "nhc_deprot.contracts.parent_protocol",
-            "server autofill_* training_data",
         ],
-        "status": "reader_ready_pilot_data_on_server",
+        "status": "layout_and_resource_model_ready",
         "notes": (
-            "Parameterized split/NPZ reader + weight audit ready; "
-            "V004 pilot 235 frames on server (counts from evidence, not hardcode); "
-            "scale teacher generator not ported"
+            "parallel S: single_27 default, dual after claim+receipt; "
+            "teacher live runner not yet; pilot frames legacy-readonly"
         ),
     },
     3: {
         "title": "Epoch-0 baseline full route",
-        "modules": ["nhc_deprot.pipeline.parent_handoff", "docs/contracts/GAU_LOOSE_V001.yaml"],
+        "modules": [
+            "nhc_deprot.pipeline.parent_handoff",
+            "nhc_deprot.resources.profiles",
+            "docs/contracts/GAU_LOOSE_V001.yaml",
+            "docs/contracts/RESOURCE_PROFILES_V001.yaml",
+        ],
         "status": "writer_static_only",
-        "notes": "V004 epoch0 writer static audit PASS; execution NOT_RUN",
+        "notes": "execution NOT_RUN; requires claim PASS + epoch0_execution",
     },
     4: {
         "title": "Train AIMNet2 on Train frames",

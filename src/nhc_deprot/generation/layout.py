@@ -1,0 +1,247 @@
+"""NHC0801 generation layout: nhc0801-g001 under $WJW/NHC0801/runs only.
+
+Scope C: pilot-scale first. Parallel S: single profile default; dual needs claim.
+No live chemistry here — directory + metadata only.
+"""
+
+from __future__ import annotations
+
+import json
+from dataclasses import asdict, dataclass, field
+from pathlib import Path
+from typing import Any, Final
+
+from nhc_deprot.contracts.parent_protocol import PROTOCOL_SHA256
+from nhc_deprot.data.io_util import canonical_json, load_json_object, sha256_bytes
+from nhc_deprot.data.paths import (
+    DEFAULT_NHC0801,
+    DEFAULT_WJW,
+    SEALED_FINAL_TEST_COMMITMENT_SHA256,
+    SEALED_FINAL_TEST_ROOT_COUNT,
+    TRAIN_ROOTS,
+    VALIDATION_ROOTS,
+)
+
+GENERATION_SCHEMA: Final = "nhc0801-generation-meta-v1"
+DEFAULT_GENERATION_ID: Final = "nhc0801-g001"
+SCOPE: Final = "C"
+PARALLEL_STRATEGY: Final = "S"
+
+# Subdirectories under runs/<generation_id>/
+GENERATION_SUBDIRS: Final = (
+    "meta",
+    "resources",
+    "teacher",
+    "d3",
+    "datasets/weighted",
+    "epoch0",
+    "train",
+    "sci_val",
+    "freeze",
+    "logs",
+)
+
+
+class GenerationError(RuntimeError):
+    """Generation layout or metadata is invalid."""
+
+
+@dataclass(frozen=True, slots=True)
+class GenerationLayout:
+    """Resolved paths for one generation (server or local sandbox)."""
+
+    generation_id: str
+    nhc0801_root: Path
+    runs_root: Path
+    generation_root: Path
+    meta_dir: Path
+    resources_dir: Path
+    teacher_dir: Path
+    d3_dir: Path
+    datasets_dir: Path
+    epoch0_dir: Path
+    train_dir: Path
+    sci_val_dir: Path
+    freeze_dir: Path
+    logs_dir: Path
+
+    def teacher_root_dir(self, root_id: str) -> Path:
+        return self.teacher_dir / root_id
+
+    def teacher_endpoint_dir(self, root_id: str, endpoint: str) -> Path:
+        if endpoint not in {"cation", "neutral"}:
+            raise GenerationError(f"invalid endpoint: {endpoint}")
+        return self.teacher_root_dir(root_id) / endpoint
+
+    def resource_claim_path(self, claim_id: str) -> Path:
+        return self.resources_dir / f"claim_{claim_id}.json"
+
+    def selection_receipt_path(self) -> Path:
+        return self.resources_dir / "profile_selection_receipt.json"
+
+    def generation_meta_path(self) -> Path:
+        return self.meta_dir / "generation.json"
+
+
+@dataclass
+class GenerationMeta:
+    schema: str = GENERATION_SCHEMA
+    generation_id: str = DEFAULT_GENERATION_ID
+    project: str = "NHC0801"
+    scope: str = SCOPE
+    parallel_strategy: str = PARALLEL_STRATEGY
+    parent_protocol_sha256: str = PROTOCOL_SHA256
+    default_resource_profile: str = "single_27_physical_v1"
+    dual_profile_candidate: str = "dual_14_13_physical_v1"
+    train_roots: list[str] = field(default_factory=lambda: list(TRAIN_ROOTS))
+    validation_roots: list[str] = field(default_factory=lambda: list(VALIDATION_ROOTS))
+    sealed_final_test_commitment_sha256: str = SEALED_FINAL_TEST_COMMITMENT_SHA256
+    sealed_final_test_root_count: int = SEALED_FINAL_TEST_ROOT_COUNT
+    final_test_identities_exposed: bool = False
+    live_chemistry_authorized: bool = False
+    source_commit: str | None = None
+    notes: list[str] = field(default_factory=list)
+
+    def as_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def resolve_layout(
+    *,
+    generation_id: str = DEFAULT_GENERATION_ID,
+    nhc0801_root: Path | None = None,
+    wjw: Path | None = None,
+) -> GenerationLayout:
+    root = nhc0801_root
+    if root is None:
+        root = (wjw or DEFAULT_WJW) / "NHC0801" if wjw is not None else DEFAULT_NHC0801
+    root = Path(root)
+    if generation_id != generation_id.strip() or "/" in generation_id or ".." in generation_id:
+        raise GenerationError(f"invalid generation_id: {generation_id!r}")
+    gen = root / "runs" / generation_id
+    return GenerationLayout(
+        generation_id=generation_id,
+        nhc0801_root=root,
+        runs_root=root / "runs",
+        generation_root=gen,
+        meta_dir=gen / "meta",
+        resources_dir=gen / "resources",
+        teacher_dir=gen / "teacher",
+        d3_dir=gen / "d3",
+        datasets_dir=gen / "datasets" / "weighted",
+        epoch0_dir=gen / "epoch0",
+        train_dir=gen / "train",
+        sci_val_dir=gen / "sci_val",
+        freeze_dir=gen / "freeze",
+        logs_dir=gen / "logs",
+    )
+
+
+def ensure_generation_tree(
+    layout: GenerationLayout,
+    *,
+    exist_ok: bool = True,
+) -> GenerationLayout:
+    """Create empty generation directory tree (no chemistry)."""
+
+    layout.generation_root.mkdir(parents=True, exist_ok=exist_ok)
+    for rel in GENERATION_SUBDIRS:
+        (layout.generation_root / rel).mkdir(parents=True, exist_ok=True)
+    return layout
+
+
+def build_generation_meta(
+    *,
+    generation_id: str = DEFAULT_GENERATION_ID,
+    source_commit: str | None = None,
+    notes: list[str] | None = None,
+) -> GenerationMeta:
+    return GenerationMeta(
+        generation_id=generation_id,
+        source_commit=source_commit,
+        notes=list(notes or [])
+        + [
+            "scope=C: pilot train/val roots first",
+            "parallel=S: single_27 default; dual only after claim+calibration receipt",
+            "live_chemistry_authorized=false until explicit user gate",
+        ],
+    )
+
+
+def write_generation_meta(layout: GenerationLayout, meta: GenerationMeta) -> dict[str, object]:
+    path = layout.generation_meta_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if meta.generation_id != layout.generation_id:
+        raise GenerationError("meta.generation_id must match layout")
+    if meta.final_test_identities_exposed:
+        raise GenerationError("Final Test identities must not be exposed")
+    if meta.live_chemistry_authorized:
+        raise GenerationError(
+            "refusing to write live_chemistry_authorized=true via layout helper; "
+            "use explicit gate workflow"
+        )
+    raw = canonical_json(meta.as_dict())
+    if path.exists():
+        existing = path.read_bytes()
+        if existing != raw:
+            raise GenerationError(
+                f"generation.json already exists and differs (no overwrite): {path}"
+            )
+        return {"path": str(path), "bytes": len(raw), "sha256": sha256_bytes(raw), "wrote": False}
+    path.write_bytes(raw)
+    return {"path": str(path), "bytes": len(raw), "sha256": sha256_bytes(raw), "wrote": True}
+
+
+def load_generation_meta(path: Path) -> GenerationMeta:
+    payload, _ = load_json_object(path)
+    if payload.get("schema") != GENERATION_SCHEMA:
+        raise GenerationError(f"unexpected generation schema: {payload.get('schema')!r}")
+    if payload.get("final_test_identities_exposed") is True:
+        raise GenerationError("generation meta exposes Final Test identities")
+    return GenerationMeta(
+        schema=str(payload["schema"]),
+        generation_id=str(payload["generation_id"]),
+        project=str(payload.get("project", "NHC0801")),
+        scope=str(payload.get("scope", SCOPE)),
+        parallel_strategy=str(payload.get("parallel_strategy", PARALLEL_STRATEGY)),
+        parent_protocol_sha256=str(payload.get("parent_protocol_sha256", PROTOCOL_SHA256)),
+        default_resource_profile=str(
+            payload.get("default_resource_profile", "single_27_physical_v1")
+        ),
+        dual_profile_candidate=str(
+            payload.get("dual_profile_candidate", "dual_14_13_physical_v1")
+        ),
+        train_roots=list(payload.get("train_roots") or TRAIN_ROOTS),
+        validation_roots=list(payload.get("validation_roots") or VALIDATION_ROOTS),
+        sealed_final_test_commitment_sha256=str(
+            payload.get(
+                "sealed_final_test_commitment_sha256",
+                SEALED_FINAL_TEST_COMMITMENT_SHA256,
+            )
+        ),
+        sealed_final_test_root_count=int(
+            payload.get("sealed_final_test_root_count", SEALED_FINAL_TEST_ROOT_COUNT)
+        ),
+        final_test_identities_exposed=bool(
+            payload.get("final_test_identities_exposed", False)
+        ),
+        live_chemistry_authorized=bool(payload.get("live_chemistry_authorized", False)),
+        source_commit=payload.get("source_commit"),  # type: ignore[arg-type]
+        notes=list(payload.get("notes") or []),
+    )
+
+
+def init_generation(
+    *,
+    generation_id: str = DEFAULT_GENERATION_ID,
+    nhc0801_root: Path | None = None,
+    source_commit: str | None = None,
+    exist_ok: bool = True,
+) -> tuple[GenerationLayout, GenerationMeta, dict[str, object]]:
+    """Create tree + write generation.json (local sandbox or server root)."""
+
+    layout = resolve_layout(generation_id=generation_id, nhc0801_root=nhc0801_root)
+    ensure_generation_tree(layout, exist_ok=exist_ok)
+    meta = build_generation_meta(generation_id=generation_id, source_commit=source_commit)
+    receipt = write_generation_meta(layout, meta)
+    return layout, meta, receipt

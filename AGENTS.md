@@ -38,7 +38,8 @@ Conflict order: **mindmap.md** → frozen YAML/JSON → this file → `RETRO.md`
 | **科学流水线真值** | `mindmap.md` | 根目录；改口径先改它 |
 | **协作者入口** | `README.md` | 中文学术说明；勿替代 mindmap |
 | **私人配置** | `configs/*.local.yaml`, `private/` | **永不提交** |
-| **运行产物** | `runs/`, `reports/`, `models/checkpoints/` | 默认 gitignore；服务器写 `$WJW/NHC0801/...` |
+| **运行产物** | `runs/`（服务器 `$WJW/NHC0801/runs/<generation>/`） | generation 用 `nhc0801-g001`；见 `generation/layout.py` |
+| **资源档案** | `docs/contracts/RESOURCE_PROFILES_V001.yaml` | parallel S：single 默认；dual 需 claim+收据 |
 | **临时草稿** | **禁止长期放仓库根** | 用完删，或迁入 `docs/plans/` / `RETRO.md` |
 
 **禁止：**

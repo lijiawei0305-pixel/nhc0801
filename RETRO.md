@@ -179,8 +179,26 @@
 
 ---
 
+## H. Generation / 并行资源
+
+### H1. `[已解决]` 并行策略未写进代码导致 vibe 时乱开进程
+
+- **现象**: 想多分子并行但无档案/claim 模型。
+- **根因**: 只有 handoff 叙述，无 NHC0801 模块。
+- **解决方案**: `RESOURCE_PROFILES_V001.yaml` + `resources/{profiles,claim,worker_pool}.py`；策略 S（single→dual）；`live_dispatch_enabled=false`。
+- **已升级为规则**: `AGENTS.md` 落盘表；`docs/plans/20260801_clean_restart_and_parallel_compute_plan.md`。
+
+### H2. `[未解决]` 服务器 live claim 仍可能 CPU busy
+
+- **现象**: handoff V002 REJECTED。
+- **根因**: 共享节点 0,2-27 被占。
+- **解决方案（规避）**: 代码可评估快照；真采样与 chemistry 待资源空闲 + 用户授权。勿用 112 逻辑核硬开。
+
+---
+
 ## 变更记录（本文件自身）
 
 | 日期 | 说明 |
 | --- | --- |
 | 2026-08-01 | 初创：从 NHC0801 冷启动～sci-val writer 会话提炼 A–G 条目 |
+| 2026-08-01 | 追加 H：generation + resource 模型（C/S，无 live） |

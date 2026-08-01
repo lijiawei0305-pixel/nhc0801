@@ -12,11 +12,15 @@ from typing import Final
 DEFAULT_WJW: Final = Path("/home/plab/test/WJW")
 DEFAULT_NHC0801: Final = DEFAULT_WJW / "NHC0801"
 
-# V004 pilot teacher frames (read-only shared runs)
+# Clean generation (scope C / parallel S) — write only under NHC0801
+DEFAULT_GENERATION_ID: Final = "nhc0801-g001"
+GENERATION_RUNS_RELATIVE: Final = Path("runs") / DEFAULT_GENERATION_ID
+
+# V004 pilot teacher frames (read-only shared runs; legacy binding)
 AUTOFILL_ROOT_TEMPLATE: Final = "autofill_{candidate_lower}_v001"
 FRAME_RELATIVE: Final = "training_data/{endpoint}/frame_{index:04d}.json"
 
-# V004 assembled products (read-only)
+# V004 assembled products (read-only legacy; new products go to generation tree)
 V004_D3_PROJECTION: Final = Path("data/runs/phase9b_aimnet2_v004_d3_projection_v001")
 V004_WEIGHTED_DATASET: Final = Path("data/runs/phase9b_aimnet2_v004_weighted_dataset_v001")
 
@@ -74,3 +78,12 @@ def frame_path(runs_root: Path, candidate: str, endpoint: str, index: int) -> Pa
 
 def mol_gold_xyz(wjw: Path, candidate: str, endpoint: str) -> Path:
     return wjw / MOL_GOLD_XYZ / f"{candidate}_{endpoint}.xyz"
+
+
+def nhc0801_generation_root(
+    nhc0801: Path | None = None, *, generation_id: str = DEFAULT_GENERATION_ID
+) -> Path:
+    """Authoritative run root for new NHC0801 products (not pilot phase9b paths)."""
+
+    base = nhc0801 or DEFAULT_NHC0801
+    return base / "runs" / generation_id

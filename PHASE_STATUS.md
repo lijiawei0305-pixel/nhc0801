@@ -37,6 +37,20 @@ teacher DFT / epoch-0 / AIMNet2 train / sci-val **live** / Final Test / write ou
 - `docs/plans/`: vibe coding 前规划
 - `scripts/`: CLI 薄封装 only
 
+## Generation + resources (scope C / parallel S)
+
+| Item | Status |
+| --- | --- |
+| Decision | C (pilot first) + S (single→dual after claim) + code only, no live |
+| Generation layout | `src/nhc_deprot/generation/` → `runs/<id>/…` |
+| Profiles | `docs/contracts/RESOURCE_PROFILES_V001.yaml` |
+| Claim eval | `resources/claim.py` (injected snapshots; no SSH) |
+| Worker slots | `resources/worker_pool.py` (no process spawn) |
+| CLI | `scripts/nhc0801_init_generation.py`, `nhc0801_resource_claim_eval.py` |
+| Live chemistry | **still closed** |
+
 ## Next unique engineering step
 
-Multi-seed trainer loop (mindmap 4–5) that retains all outcomes and never final-selects on quick-val; then authorized epoch-0 execution.
+Local dry-run: init `runs/local_nhc0801/runs/nhc0801-g001`.  
+Then: teacher runner skeleton (still gated) **or** multi-seed trainer loop — user pick.  
+Live: wait claim PASS + explicit `teacher_pyscf_authorized` / `epoch0_execution`.
