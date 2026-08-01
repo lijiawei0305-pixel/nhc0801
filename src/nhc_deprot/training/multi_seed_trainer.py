@@ -386,10 +386,24 @@ def run_multi_seed_training(
         )
 
     if not skip_dataset_audit:
-        audit = audit_weighted_dataset(
-            datasets_dir,
-            expected_schema="nhc0801-development-dataset-v1",
-        )
+        # Accept NHC0801 writer schema or pilot V004 development schema (reuse path)
+        last_err: Exception | None = None
+        audit = None
+        for schema in (
+            "nhc0801-development-dataset-v1",
+            "phase9b-aimnet2-development-dataset-v004",
+        ):
+            try:
+                audit = audit_weighted_dataset(
+                    datasets_dir,
+                    expected_schema=schema,
+                )
+                last_err = None
+                break
+            except Exception as exc:  # noqa: BLE001
+                last_err = exc
+        if audit is None:
+            raise TrainerError(f"dataset audit failed: {last_err}")
         if audit.status != "PASS":
             raise TrainerError(f"dataset audit not PASS: {audit.status}")
         if audit.training_started:

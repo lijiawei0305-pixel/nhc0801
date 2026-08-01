@@ -112,6 +112,14 @@ PYTHONPATH=src python scripts/nhc0801_train_dry_run.py \
   --nhc0801-root runs/local_nhc0801 --bootstrap-data --epochs 5
 ```
 
+## Ops 2026-08-02
+
+- Stopped Codex phase9b pure_pyscf workers (VPAF on 0,2-27; RBKF on 28-55) + supervisor  
+- Reused pilot 235-frame weighted+D3 into `NHC0801/runs/nhc0801-g001` (symlink bind)  
+- Server claim **PASS**; train dry-run **PASS**; epoch0 dry-run **PASS**  
+- See `docs/science/OPS_20260802_STOP_CODEX_AND_REUSE.md`  
+- Live DFT/AIMNet2 still not wired  
+
 ## Resource claim sampler (read-only)
 
 | Item | Status |
