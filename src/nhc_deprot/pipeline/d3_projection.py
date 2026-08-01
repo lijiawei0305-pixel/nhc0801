@@ -20,7 +20,8 @@ from nhc_deprot.contracts.parent_protocol import PROTOCOL_SHA256
 from nhc_deprot.data.io_util import canonical_json, load_json_object, sha256_bytes
 from nhc_deprot.data.paths import TRAIN_ROOTS, VALIDATION_ROOTS
 from nhc_deprot.generation.layout import GenerationLayout
-from nhc_deprot.pipeline.teacher_runner import FRAME_SCHEMA, write_json
+from nhc_deprot.data.io_util import write_json
+from nhc_deprot.pipeline.teacher_runner import FRAME_SCHEMA
 
 D3_RECEIPT_SCHEMA: Final = "nhc0801-training-d3-projection-v1"
 D3_CAMPAIGN_SCHEMA: Final = "nhc0801-d3-projection-campaign-v1"

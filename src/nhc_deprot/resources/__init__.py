@@ -1,4 +1,4 @@
-"""Resource profiles, claim evaluation, and worker slot model (no live SSH)."""
+"""Resource profiles, claim evaluation, host sampling, and worker slots."""
 
 from nhc_deprot.resources.claim import (
     ClaimGates,
@@ -24,6 +24,8 @@ from nhc_deprot.resources.worker_pool import (
     complete_root,
     progress_summary,
 )
+
+# claim_runner / host_sampler imported lazily by callers to avoid heavy import graphs
 
 __all__ = [
     "ClaimGates",

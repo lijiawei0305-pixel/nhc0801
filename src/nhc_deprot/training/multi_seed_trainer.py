@@ -24,7 +24,7 @@ from nhc_deprot.contracts.tvt_gates import quick_checkpoint_shortlist
 from nhc_deprot.data.paths import OFFICIAL_AIMNET2_WEIGHT_SHA256
 from nhc_deprot.data.weighted_dataset import REQUIRED_ARRAYS, audit_weighted_dataset
 from nhc_deprot.generation.layout import GenerationLayout
-from nhc_deprot.pipeline.teacher_runner import write_json
+from nhc_deprot.data.io_util import write_json
 from nhc_deprot.training.config import TrainingConfig
 from nhc_deprot.training.weighted_loss import (
     SAMPLE_WEIGHT_KEY,

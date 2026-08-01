@@ -26,7 +26,8 @@ from nhc_deprot.data.weight_policy import assign_candidate_endpoint_weights
 from nhc_deprot.data.weighted_dataset import REQUIRED_ARRAYS, audit_weighted_dataset
 from nhc_deprot.generation.layout import GenerationLayout
 from nhc_deprot.pipeline.d3_projection import D3_RECEIPT_SCHEMA
-from nhc_deprot.pipeline.teacher_runner import FRAME_SCHEMA, write_json
+from nhc_deprot.data.io_util import write_json
+from nhc_deprot.pipeline.teacher_runner import FRAME_SCHEMA
 from nhc_deprot.training.weighted_loss import SAMPLE_WEIGHT_KEY, WEIGHTING_POLICY
 
 OUTPUT_MANIFEST_SCHEMA: Final = "nhc0801-development-dataset-v1"

@@ -112,8 +112,24 @@ PYTHONPATH=src python scripts/nhc0801_train_dry_run.py \
   --nhc0801-root runs/local_nhc0801 --bootstrap-data --epochs 5
 ```
 
+## Resource claim sampler (read-only)
+
+| Item | Status |
+| --- | --- |
+| Probe | `resources/host_sampler.py` (local or SSH BatchMode) |
+| Orchestration | `resources/claim_runner.py` → `g001/resources/claim_*.json` |
+| CLI | `scripts/nhc0801_resource_claim.py` |
+| Chemistry | **never started**; PASS ≠ open teacher/epoch0/train gates |
+
+```bash
+# Remote two-sample claim (uses configs/server.local.yaml ssh_alias)
+PYTHONPATH=src python scripts/nhc0801_resource_claim.py --mode ssh --interval-s 5
+
+# Local machine only (dev / non-HPC)
+PYTHONPATH=src python scripts/nhc0801_resource_claim.py --mode local
+```
+
 ## Next unique engineering step
 
-接 live 前：资源 claim 采样器 + 真 PySCF/AIMNet2 引擎接线；  
-或实现 **步骤 8 live sci-val 引擎** 与 epoch-0 授权执行包。  
-科学顺序上 live 仍应：claim → teacher/D3 实算 → epoch-0 → 再 train。
+科学顺序 live：claim PASS → 授权 teacher → 真 D3 → epoch-0 → train。  
+工程可选：PySCF/AIMNet2 live 引擎接线，或端到端 dry-run 编排脚本。

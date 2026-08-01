@@ -48,7 +48,7 @@ from nhc_deprot.pipeline.scientific_validation import (
     SimulatedParentEngine,
     run_scientific_validation_for_checkpoint,
 )
-from nhc_deprot.pipeline.teacher_runner import write_json
+from nhc_deprot.data.io_util import write_json
 
 EPOCH0_CAMPAIGN_SCHEMA: Final = "nhc0801-epoch0-campaign-v1"
 EPOCH0_ROOT_SCHEMA: Final = "nhc0801-epoch0-root-receipt-v1"

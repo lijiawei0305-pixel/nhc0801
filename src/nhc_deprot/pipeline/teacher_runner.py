@@ -36,7 +36,7 @@ from nhc_deprot.contracts.parent_protocol import (
     PROTOCOL_ID,
     PROTOCOL_SHA256,
 )
-from nhc_deprot.data.io_util import canonical_json, sha256_bytes
+from nhc_deprot.data.io_util import write_json
 from nhc_deprot.data.paths import TRAIN_ROOTS, VALIDATION_ROOTS
 from nhc_deprot.generation.layout import GenerationLayout
 from nhc_deprot.resources.profiles import ResourceProfile, get_profile
@@ -151,18 +151,6 @@ def _assert_no_final_test_roots(root_ids: Sequence[str]) -> None:
         lower = root_id.lower()
         if any(tok.lower() in lower for tok in forbidden_tokens):
             raise TeacherRunnerError(f"refusing Final Test-like root id: {root_id}")
-
-
-def write_json(path: Path, payload: Mapping[str, Any], *, overwrite: bool = False) -> dict[str, object]:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    raw = canonical_json(dict(payload))
-    if path.exists() and not overwrite:
-        existing = path.read_bytes()
-        if existing != raw:
-            raise TeacherRunnerError(f"refusing overwrite of divergent file: {path}")
-        return {"path": str(path), "bytes": len(raw), "sha256": sha256_bytes(raw), "wrote": False}
-    path.write_bytes(raw)
-    return {"path": str(path), "bytes": len(raw), "sha256": sha256_bytes(raw), "wrote": True}
 
 
 @dataclass
