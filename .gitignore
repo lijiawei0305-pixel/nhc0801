@@ -1,0 +1,22 @@
+# private paths and credentials
+private/
+configs/*.local.yaml
+configs/*.local.yml
+**/*.local.yaml
+.DS_Store
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+# large runtime artifacts (stay on server or local private)
+data/raw_large/
+data/teacher/
+data/geometries/**
+!data/geometries/.gitkeep
+models/checkpoints/
+*.pt
+*.ckpt
+# allow small audited label products
+!data/labels/**

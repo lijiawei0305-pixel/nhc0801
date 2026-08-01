@@ -1,0 +1,12 @@
+总计 44
+drwxr-xr-x  2 plab plab 4096  7月 22 17:58 .
+drwxr-xr-x 15 plab plab 4096  7月 23 00:24 ..
+-rw-r--r--  1 plab plab  523  7月 22 17:58 aimnet2.sh
+-rw-r--r--  1 plab plab  433  6月 15 12:50 cp2k.sh
+-rw-rw-r--  1 plab plab 1206  7月 22 11:00 mace.sh
+-rw-r--r--  1 plab plab  783  7月 14 18:51 mlff.sh
+-rw-r--r--  1 plab plab  220  6月 15 20:41 molenv.sh
+-rw-r--r--  1 plab plab  371  6月 15 12:49 multiwfn.sh
+-rw-r--r--  1 plab plab  219  6月 15 20:42 perienv.sh
+-rw-r--r--  1 plab plab 3572  6月 15 12:49 vasp.sh
+-rw-r--r--  1 plab plab  238  6月 14 20:57 xtb.sh

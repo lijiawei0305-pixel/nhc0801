@@ -1,0 +1,240 @@
+{
+  "schema": "phase9b-aimnet2-model-generation-config-v004",
+  "generation_id": "phase9b-aimnet2-nhc-p01-tvt-20260801-v001",
+  "supersedes_blocked_unconsumed_generation": "phase9b-aimnet2-nhc-p01-v003",
+  "state": "BLOCKED_BEFORE_TRAINING",
+  "science_pilot_only": true,
+  "production_accepted": false,
+  "production_label_inserted": false,
+  "single_point_only_eligible": false,
+  "intended_route": "PRECONDITIONER_FULL_PARENT_OPT",
+  "single_training_attempt": true,
+  "training_attempt_consumed": false,
+  "retry": false,
+  "source_commit": "not_frozen",
+  "workflow": {
+    "path": "docs/PHASE9B_AIMNET2_TVT_WORKFLOW_V001.yaml",
+    "sha256": "97d5c545d55f68219c30f5184591bda9410d1602272b424e9b0216be1afd4f3a"
+  },
+  "day1_plan": {
+    "path": "docs/PHASE9B_AIMNET2_TVT_DAY1_EXECUTION_PLAN.md",
+    "sha256": "c5f571ebbe0b6c39cd5aeeb00fa4aa0a447617e4dce4e7ccb508ee15744ab402"
+  },
+  "cohort_audit": {
+    "path": "docs/PHASE9B_AIMNET2_TVT_DAY1_COHORT_AUDIT_V001.json",
+    "sha256": "9e4e124f620baac0ec67be9fc904d5ef476d5d615c925a72fa9e18f5cc491881"
+  },
+  "development_split": {
+    "path": "docs/PHASE9B_AIMNET2_TVT_DAY1_DEVELOPMENT_SPLIT_V001.json",
+    "sha256": "e3489ec29caa02695d3927e94bc47698ecf57bb189f6084fbeab6384bd04a30c",
+    "train_root_count": 3,
+    "validation_root_count": 2,
+    "sealed_final_test_commitment_sha256": "834f973954064565aa857e8d8c563d110d0f6256c99e54fc3283dc428efa6975",
+    "sealed_final_test_root_count": 2,
+    "final_test_identities_exposed_to_training": false
+  },
+  "contract_implementation": {
+    "path": "scripts/phase9b_aimnet2_tvt_contract.py",
+    "sha256": "d1bfecb6a72cdb88e76d370c835d62befc8c11f275f6b5ac24bf32d0bfce2226"
+  },
+  "dataset_audit": {
+    "source_path": "scripts/phase9b_aimnet2_v004_dataset_audit.py",
+    "executed_source_sha256": "70882be9b162eb367f31af986a4b1de45f5060d4f86d7228de41ddc3499256ab",
+    "reaudit_source_sha256": "9230a3a542a7b486a768e158de92f0478d0ac8323f4e7ee972b76daf1403ea73",
+    "result_path": "docs/PHASE9B_AIMNET2_V004_DATASET_AUDIT_RESULT.json",
+    "result_sha256": "8b47a659fa6b10ad1a9a1fd8218443d71aea0a457dd97c8a077b26634b731449",
+    "frame_admission": "PASS",
+    "root_identity": "PASS",
+    "d3_projection": "PASS",
+    "weight_plan": "PASS",
+    "weight_application": "WRITER_IMPLEMENTED_DATASET_NOT_GENERATED"
+  },
+  "root_identity_contract": {
+    "path": "docs/PHASE9B_AIMNET2_V004_ROOT_IDENTITY_CONTRACT.yaml",
+    "sha256": "771f5da2fa590d7f2c5c21c3b1c03dbe25a2a85025e795d7e7eed7688874d818",
+    "status": "FROZEN_REAUDIT_PASS",
+    "reaudit_result_path": "docs/PHASE9B_AIMNET2_V004_ROOT_IDENTITY_REAUDIT_RESULT.json",
+    "reaudit_result_sha256": "935331b0bd02d8196b60e402544251cbaffecc29561e1cb558a4b514ffea975d"
+  },
+  "dataset_writer": {
+    "path": "scripts/phase9b_aimnet2_training_dataset_v004.py",
+    "sha256": "27fc443abd330a35d34b080cce038dba85ccd8820a68bcf488bd7695779d7b3f",
+    "historical_writer_unchanged": true,
+    "historical_writer_sha256": "98cf42829c01076a2c65c21c0976dacf857884bc599f969e0f3f205264cb7d53",
+    "day1_development_split_supported": true,
+    "sample_weight_storage_implemented": true,
+    "trainer_sample_weight_consumption_implemented": false
+  },
+  "weighted_dataset_result": {
+    "path": "docs/PHASE9B_AIMNET2_V004_WEIGHTED_DATASET_RESULT.json",
+    "sha256": "3428d1159c280c0c44904f03206de3515ecaae149598c4dec1c0d22897bd3913",
+    "execution_source_path": "scripts/phase9b_aimnet2_v004_weighted_dataset.py",
+    "execution_source_sha256": "75f4ac1ef6ecff476be9213ad94e49452648d10e25df6b06a7023b4026d8f574",
+    "status": "PASS_235_OF_235",
+    "d3_recomputation_performed": false
+  },
+  "trainer_weight_audit": {
+    "path": "docs/PHASE9B_AIMNET2_V004_TRAINER_WEIGHT_AUDIT_RESULT.json",
+    "sha256": "def701bf46f803290e8ee36389d045ae193fb4ce923ed6868184e6d41dd7e948",
+    "weighted_loss_component_path": "scripts/phase9b_aimnet2_v004_weighted_loss.py",
+    "weighted_loss_component_sha256": "d512b75710d42914303f649bec7d555d4888c856fd7c876728e27327501a8b49",
+    "status": "WEIGHTED_LOSS_COMPONENT_PASS_INTEGRATION_BLOCKED",
+    "historical_trainer_unchanged": true
+  },
+  "training_writer_simulation": {
+    "path": "docs/PHASE9B_AIMNET2_V004_TRAINING_WRITER_SIMULATION_RESULT.json",
+    "sha256": "69d0d0f0864a6f29046cee6a188680b18526b8b8c34e2d6df9abb79a15d99713",
+    "writer_path": "scripts/phase9b_aimnet2_finetune_v004.py",
+    "writer_sha256": "4efbc2694b85d48197cb77d1d435637423f81236814701ed802ee13d8ba56b1d",
+    "status": "V004_WEIGHTED_TRAINER_INTEGRATION_SIMULATION_PASS",
+    "historical_trainer_unchanged": true,
+    "live_training_consumption": "NOT_RUN"
+  },
+  "epoch_zero_validation_writer": {
+    "plan_path": "docs/PHASE9B_AIMNET2_V004_EPOCH0_VALIDATION_PLAN.json",
+    "plan_sha256": "42bac1358fabd67edd0bfb9b80fc074464dd44e6febe95fc62795ca0768a4721",
+    "writer_path": "scripts/phase9b_aimnet2_v004_epoch0_validation.py",
+    "writer_sha256": "c9664b42dd7a8ffcc8f0644d002a64644010da1b7d7925e915bea5cde624482b",
+    "audit_result_path": "docs/PHASE9B_AIMNET2_V004_EPOCH0_WRITER_AUDIT_RESULT.json",
+    "audit_result_sha256": "501d599e7c75ff17472dd02a6b4169ec7954b6061edb2d33db16ca902d2a6b23",
+    "status": "EPOCH_ZERO_FULL_ROUTE_WRITER_STATIC_AUDIT_PASS",
+    "execution_state": "NOT_RUN"
+  },
+  "epoch_zero_execution_resources": {
+    "config_path": "docs/PHASE9B_AIMNET2_V004_EPOCH0_EXECUTION_CONFIG.json",
+    "config_sha256": "a9006be56041068a0af023723245ac52cde2b45846032ab6c3707f2fefce0f34",
+    "auditor_path": "scripts/phase9b_aimnet2_v004_epoch0_resources.py",
+    "auditor_sha256": "12dec943f2699e055319f092335f9f51363778015fa2e1662d7f63836e42375e",
+    "audit_result_path": "docs/PHASE9B_AIMNET2_V004_EPOCH0_RESOURCE_AUDIT_RESULT.json",
+    "audit_result_sha256": "e5726466aca2da9352ef073ac9ff091a3a3e91b6e4ea4967ec21780156e96def",
+    "status": "EPOCH_ZERO_EXECUTION_CONFIG_AND_RESOURCE_BUDGET_FROZEN",
+    "live_resource_claim": "NOT_RUN",
+    "execution_state": "NOT_RUN"
+  },
+  "dual_worker_resource_calibration": {
+    "plan_path": "docs/PHASE9B_AIMNET2_V004_DUAL_WORKER_CALIBRATION_PLAN.json",
+    "plan_sha256": "e14ee4db1f83f98e98ad9899d6192ee7279693942e1a164f445775ca10250ff1",
+    "auditor_path": "scripts/phase9b_aimnet2_v004_dual_worker_calibration.py",
+    "auditor_sha256": "60f04ed9dfffdce1bcc55c5fa9828dfec88857940a9feb94744e832379395610",
+    "audit_result_path": "docs/PHASE9B_AIMNET2_V004_DUAL_WORKER_CALIBRATION_AUDIT_RESULT.json",
+    "audit_result_sha256": "fdca2f5c1fc198d79c118cf436bb6ad05ffc2df6426557c10e6d70001d936e1a",
+    "state": "FROZEN_NOT_RUN",
+    "current_official_profile": "single_27_physical_v1",
+    "candidate_profile": "dual_14_13_physical_v1",
+    "minimum_improvement_percent": 5.0,
+    "live_resource_claim": {
+      "path": "docs/PHASE9B_AIMNET2_V004_DUAL_WORKER_LIVE_RESOURCE_CLAIM_V002.json",
+      "sha256": "56b59957db247f7a8edeec143a4b733dff687d5baa3685ae62af5f76c311bf64",
+      "validator_path": "scripts/phase9b_aimnet2_v004_live_resource_claim.py",
+      "validator_sha256": "c19fd9223e17230827e4d4342a0a0f852677d427e0f2100da4c304871b2fc328",
+      "status": "LIVE_RESOURCE_CLAIM_REJECTED",
+      "route_claim_permitted": false
+    },
+    "previous_live_resource_claim": {
+      "path": "docs/PHASE9B_AIMNET2_V004_DUAL_WORKER_LIVE_RESOURCE_CLAIM.json",
+      "sha256": "c2c265f96de038003b6b474f4bd454b29b123aa6813a361807b14eb08ce35700",
+      "status": "LIVE_RESOURCE_CLAIM_REJECTED"
+    },
+    "calibration_execution": "NOT_RUN",
+    "profile_selection_receipt": "NOT_GENERATED"
+  },
+  "d3_projection_result": {
+    "path": "docs/PHASE9B_AIMNET2_V004_D3_PROJECTION_RESULT.json",
+    "sha256": "f476043f048e6a967d9d652a18e4c9d2b6f9374cb7a7d0f974f7c65d4be885e3",
+    "execution_source_path": "scripts/phase9b_aimnet2_v004_d3_projection.py",
+    "execution_source_sha256": "ec973e923089aaed83fc11bd8ef191ba6ef44181f97ec0cb4d59cde3c36a7903",
+    "status": "PASS_235_OF_235"
+  },
+  "parent_protocol": {
+    "protocol_id": "Parent-Level Protocol P01",
+    "sha256": "227c22a527e567bc4de873ab743fe9f493779eccbb1a698d2913c87695ebf87a"
+  },
+  "aimnet2_gau_loose": {
+    "path": "docs/PHASE9B_AIMNET2_GAU_LOOSE_V001.yaml",
+    "sha256": "0af9a6a28df9c653b95be63ba8bdea0d79187db092d6438c499fe175fc9aa75b"
+  },
+  "base_bundle": {
+    "sha256": "f0f7c054539ad3261bd36f9b11c56d12f87cb723e25bea7521755bbd3ec24e28",
+    "embedded_model_yaml_sha256": "f3a374cb0824f522b03a2f423980d5c7121c10fe49718e08782af47e7259b3b1"
+  },
+  "training": {
+    "seeds": [20260730, 20260731, 20260732],
+    "epochs": 200,
+    "optimizer": "torch.optim.RAdam",
+    "learning_rate": 0.0001,
+    "weight_decay": 1e-08,
+    "batch_size": 32,
+    "batch_mode": "molecules",
+    "batches_per_epoch": -1,
+    "gradient_clip_value": 0.4,
+    "trainable_parameter_regex": ["^outputs\\.energy_mlp\\."],
+    "loss": {
+      "energy_weight": 1.0,
+      "forces_weight": 1.0,
+      "energy_normalization": "sqrt_atom_count",
+      "force_normalization": "per_atom"
+    },
+    "scheduler": {
+      "type": "ReduceLROnPlateau",
+      "factor": 0.5,
+      "patience_epochs": 15,
+      "minimum_learning_rate": 1e-07
+    },
+    "checkpoint_interval_epochs": 10,
+    "quick_validation_each_epoch": true,
+    "quick_validation_may_select_final_model": false,
+    "all_seed_and_checkpoint_outcomes_retained": true,
+    "sample_weighting": {
+      "key": "sample_weight",
+      "policy": "equal_candidate_then_equal_endpoint_then_uniform_frames",
+      "training_estimator": "N_over_B_times_sum_weighted_per_sample_loss",
+      "validation_reduction": "global_weighted_sum_divided_by_global_weight_sum",
+      "component_implemented": true,
+      "trainer_integration_implemented": true,
+      "trainer_integration_simulated": true,
+      "live_training_consumption": "NOT_RUN"
+    }
+  },
+  "validation": {
+    "epoch_zero_full_route_writer_state": "static_audit_pass_execution_not_run",
+    "epoch_zero_execution_config_state": "frozen_static_audit_pass",
+    "epoch_zero_full_route_state": "not_generated",
+    "numeric_calibration_plan_state": "not_generated",
+    "numeric_addendum_state": "not_generated",
+    "scientific_validation_writer_state": "not_implemented",
+    "quick_checkpoint_maximum_count_per_seed": 4,
+    "full_parent_optimization_required": true,
+    "single_point_only": false
+  },
+  "data": {
+    "teacher_dataset_state": "WEIGHTED_DEVELOPMENT_DATASET_PASS",
+    "frame_admission_audit_state": "PASS_235_OF_235",
+    "d3_projection_audit_state": "PASS_235_OF_235",
+    "candidate_endpoint_weight_audit_state": "PASS_STORED_COMPONENT_AND_WRITER_SIMULATION",
+    "root_leakage_audit_state": "PASS",
+    "partial_frames_allowed": false
+  },
+  "server_output_root_projection": "runs/phase9b_aimnet2_tvt_20260801_v001",
+  "readiness": {
+    "state": "BLOCKED_BEFORE_TRAINING",
+    "blocking_reason_codes": [
+      "SOURCE_COMMIT_NOT_FROZEN",
+      "EPOCH_ZERO_FULL_ROUTE_BASELINE_NOT_AVAILABLE",
+      "NUMERIC_CALIBRATION_RULE_NOT_PREREGISTERED",
+      "FULL_SCIENTIFIC_VALIDATION_WRITER_NOT_IMPLEMENTED"
+    ]
+  },
+  "forbidden": [
+    "historical_v002_trainer",
+    "partial_frame_training",
+    "validation_weight_update",
+    "quick_frame_loss_final_selection",
+    "final_test_payload_visibility",
+    "final_test_weight_update",
+    "retry",
+    "candidate_replacement",
+    "split_movement",
+    "production_label_insertion",
+    "production_runner_change"
+  ]
+}

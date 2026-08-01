@@ -1,0 +1,24 @@
+# Read-only inventory of AIMNet2 weights on the HPC host (2026-08-01)
+# Do not overwrite. Choice of which family is epoch-0 is a project decision.
+
+## A. Official / cache used by ranker Phase 9 audits (wb97m_d3)
+
+Path: /home/plab/.cache/aimnet/aimnet2_wb97m_d3_0.pt
+Size: 8836941
+SHA256: f0f7c054539ad3261bd36f9b11c56d12f87cb723e25bea7521755bbd3ec24e28
+Members present: _0 only
+
+## B. Project model-cache under $WJW (aimnet2_2025 ensemble, 4 members)
+
+Dir: /home/plab/test/WJW/env/model-cache/aimnet2-2025/
+
+aimnet2_2025_b973c_d3_0.pt  8.5M  SHA256 043ed5418a104e31f79462f8e5ebeca64a2d24422174f5d29f894d32271981b5
+aimnet2_2025_b973c_d3_1.pt  8.5M  SHA256 912ae4f0923803cb38da3fe2bfccc1a47414fd1f9de32ad5a48465be9fe9d0a7
+aimnet2_2025_b973c_d3_2.pt  8.5M  SHA256 37c00223b32b8d614c8a9a68c3ccde0b424f5e3795d816c2b4e9d6295afe441c
+aimnet2_2025_b973c_d3_3.pt  8.5M  SHA256 92ee4d1c252042b42622b96b6e0de05eb9c2630af84261780c5c1e558cf8f91d
+
+## C. Historical fine-tunes (not epoch-0)
+
+Dir: /home/plab/test/WJW/checkpoints/  (~153M total)
+See inventory/wjw_historical_checkpoints.txt
+Contamination risk if trained on gold labels — audit before any reuse.

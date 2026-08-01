@@ -1,0 +1,32 @@
+# Copy to server.local.yaml and fill private values.
+# server.local.yaml is gitignored.
+
+schema_version: nhc0801_server.v1
+
+connection:
+  mode: campus_direct   # or socks5_proxy
+  ssh_alias: hpc-alias
+  proxy_host: 127.0.0.1
+  proxy_port: 11080
+
+remote:
+  wjw_root: /path/to/WJW
+  project_root: /path/to/WJW/NHC0801
+  # Existing stacks — use in place; do not modify
+  molenv_relative: env/envs/molenv.sh
+  mlff_relative: env/envs/mlff.sh
+  aimnet2_relative: env/envs/aimnet2.sh
+
+official_aimnet2:
+  # Prefer absolute path recorded after server preflight
+  weight_path: null
+  weight_sha256: f0f7c054539ad3261bd36f9b11c56d12f87cb723e25bea7521755bbd3ec24e28
+  member: aimnet2_wb97m_d3_0
+
+safety:
+  server_write_authorized: false
+  write_root_only: NHC0801
+  modify_wjw_outside_project: false
+  teacher_pyscf_authorized: false
+  aimnet2_train_authorized: false
+  scheduler_submission_authorized: false

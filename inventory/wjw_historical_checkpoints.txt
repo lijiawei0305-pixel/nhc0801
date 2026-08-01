@@ -1,0 +1,15 @@
+/home/plab/test/WJW/checkpoints/fw0.2_model_100.pt
+/home/plab/test/WJW/checkpoints/fw1.0_model_100.pt
+/home/plab/test/WJW/checkpoints/fw20.0_model_100.pt
+/home/plab/test/WJW/checkpoints/fw5.0_model_100.pt
+/home/plab/test/WJW/checkpoints/long_model_500.pt
+/home/plab/test/WJW/checkpoints/lr0.00003_model_200.pt
+/home/plab/test/WJW/checkpoints/lr0.0001_model_200.pt
+/home/plab/test/WJW/checkpoints/lr0.0004_model_200.pt
+/home/plab/test/WJW/checkpoints/nhc_final_model_500.pt
+/home/plab/test/WJW/checkpoints/nhc_lc020_model_100.pt
+/home/plab/test/WJW/checkpoints/nhc_lc040_model_100.pt
+/home/plab/test/WJW/checkpoints/nhc_lc060_model_100.pt
+/home/plab/test/WJW/checkpoints/nhc_lc080_model_100.pt
+/home/plab/test/WJW/checkpoints/nhc_lc100_model_100.pt
+/home/plab/test/WJW/checkpoints/smoke_model_1.pt

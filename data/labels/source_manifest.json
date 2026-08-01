@@ -1,0 +1,60 @@
+{
+  "config_sha256": {
+    "data_config": "d304a57ffd23ea047934f083c65576959654c2272400df29b9519f832bd16f8a",
+    "families_config": "bf043cfa3d979c8b2ec43910c13efb381297785d2408469ffb1da6d72a7969f6",
+    "legacy_config": "15e58998a89b358ef3e645eee2ad8fb638d5ee5db0d0799f36fe3df503f535e8"
+  },
+  "dataset_version": "v001",
+  "legacy_expected_commit": "44a68bf70031bd75799f42c4a02adf71f1b99d31",
+  "legacy_expected_remote": "https://github.com/lijiawei0305-pixel/nhc-predictor.git",
+  "sources": [
+    {
+      "parsed_rows": 401856,
+      "role": "xtb_full_candidates",
+      "sha256": "327c00871fde7149b79e527de537dd98ea26686af641b87882a112e15a01617f",
+      "size_bytes": 144197747,
+      "source_id": "remote_root:results/calculations/20260628/imid_v4_crude/imid_full_v4menu_crude_0618_method.csv",
+      "transport": "ssh-readonly"
+    },
+    {
+      "parsed_rows": 36585,
+      "role": "fragment_lookup_v3",
+      "sha256": "30ad7d4479a4902f22856ae5e5838e368eaf47eab1f576ee68b352a2a03316ae",
+      "size_bytes": 5748441,
+      "source_id": "remote_root:data/candidates/imid_lib_v3menu_graph_full.csv",
+      "transport": "ssh-readonly"
+    },
+    {
+      "parsed_rows": 365271,
+      "role": "fragment_lookup_v4_new",
+      "sha256": "ff319a318ab3d954ea530e559ec90dca59e5f8c1d209b013e679a2a60f946747",
+      "size_bytes": 63205172,
+      "source_id": "remote_root:results/calculations/20260627/pubchem_v4_expansion/pubchem_imid/imidazolium_graph_v4_new_only_pubchem_annotated.csv",
+      "transport": "ssh-readonly"
+    },
+    {
+      "parsed_rows": 24,
+      "role": "labels_gold",
+      "sha256": "ba181ef3959bab52842fd396080ba1acf0f9111b59303a0f6050eadeba1e6d9e",
+      "size_bytes": 2086,
+      "source_id": "remote_root:data/runs/mol_gold/gold_labels.csv",
+      "transport": "ssh-readonly"
+    },
+    {
+      "parsed_rows": 12,
+      "role": "labels_blind_round1",
+      "sha256": "f353d3e9882a420c68595ee679869749026c166b1516bc13045963d74c204f62",
+      "size_bytes": 1820,
+      "source_id": "legacy_repo:reports/part1-dft-gold-validation-2026-07-06/blind_test_comparison.csv",
+      "transport": "local"
+    },
+    {
+      "parsed_rows": 35,
+      "role": "labels_blind_round2",
+      "sha256": "4c457f12363c44698279f0dc43e85a6933bc3bae0c4a9a807a35398cfe84eb5b",
+      "size_bytes": 2686,
+      "source_id": "legacy_repo:reports/part1-blind-round2-2026-07-09/deltaE_final.csv",
+      "transport": "local"
+    }
+  ]
+}

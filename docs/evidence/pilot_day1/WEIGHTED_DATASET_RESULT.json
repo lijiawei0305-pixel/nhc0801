@@ -1,0 +1,72 @@
+{
+  "schema": "phase9b-aimnet2-v004-weighted-dataset-public-result-v1",
+  "created_at_utc": "2026-08-01T10:40:21Z",
+  "generation_id": "phase9b-aimnet2-nhc-p01-tvt-20260801-v001",
+  "final_outcome": "WEIGHTED_DEVELOPMENT_DATASET_PASS",
+  "science_pilot_only": true,
+  "production_accepted": false,
+  "training_started": false,
+  "aimnet2_run": false,
+  "final_test_payload_read": false,
+  "scope": {
+    "train_root_count": 3,
+    "validation_root_count": 2,
+    "candidate_count": 5,
+    "endpoint_count": 10,
+    "train_frame_count": 123,
+    "validation_frame_count": 112,
+    "frame_count": 235,
+    "final_test_in_scope": false
+  },
+  "frozen_d3_consumption": {
+    "source_result_sha256": "8f83e7cb7b86c2731995ec674c1ecda6d3b6fb81b5cafec3f3a586545a40553c",
+    "receipt_count": 235,
+    "exact_receipt_bytes_preserved": true,
+    "d3_recomputation_performed": false,
+    "energy_reconstruction": "PASS",
+    "force_reconstruction": "PASS"
+  },
+  "weighting": {
+    "policy": "equal_candidate_then_equal_endpoint_then_uniform_frames",
+    "train_candidate_target": 0.3333333333333333,
+    "train_endpoint_target": 0.16666666666666666,
+    "validation_candidate_target": 0.5,
+    "validation_endpoint_target": 0.25,
+    "train_split_weight_sum": 1.0,
+    "validation_split_weight_sum": 1.0,
+    "candidate_endpoint_audit": "PASS",
+    "stored_key": "sample_weight",
+    "trainer_consumption_status": "NOT_AUDITED"
+  },
+  "source_bindings": {
+    "source_commit": "2e19d2704eca76ef04de13b7a300adf0a6accaef",
+    "v004_dataset_writer_sha256": "27fc443abd330a35d34b080cce038dba85ccd8820a68bcf488bd7695779d7b3f",
+    "execution_source_sha256": "75f4ac1ef6ecff476be9213ad94e49452648d10e25df6b06a7023b4026d8f574",
+    "development_split_sha256": "e3489ec29caa02695d3927e94bc47698ecf57bb189f6084fbeab6384bd04a30c",
+    "parent_protocol_sha256": "227c22a527e567bc4de873ab743fe9f493779eccbb1a698d2913c87695ebf87a"
+  },
+  "execution": {
+    "remote_root_projection": "runs/phase9b_aimnet2_v004_weighted_dataset_v001",
+    "output_root_created_exclusively": true,
+    "scientific_attempt_count": 1,
+    "automatic_retry": false
+  },
+  "private_evidence_bindings": {
+    "dataset_manifest_sha256": "f8e6828db3d473f5bfa52e6e2fcce88db85706c61781a60a2340393440590a96",
+    "audit_result_sha256": "cd1bafc5a70686dc1606b98896915ba08867258e311789d01efc1952a27cf01b",
+    "result_sha256": "c279d3e484b53811ab1a0ae7a7cfe20c33a9ddd8522612196127764b815d05eb",
+    "file_manifest_sha256": "abb1a3e520f142afe597a56506c4ba9bab35c0c537e45a2ed05223c36efc1c7d",
+    "manifest_entry_count": 248,
+    "observed_file_count_including_manifest": 249,
+    "full_manifest_post_exit_stable": true
+  },
+  "next_permitted_action": "AUDIT_V004_TRAINER_SAMPLE_WEIGHT_CONSUMPTION",
+  "forbidden": [
+    "START_TRAINING",
+    "READ_FINAL_TEST_PAYLOAD",
+    "RUN_AIMNET2",
+    "RECOMPUTE_D3",
+    "MOVE_SPLIT_ROOT",
+    "PRODUCTION_LABEL_INSERTION"
+  ]
+}

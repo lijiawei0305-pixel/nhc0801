@@ -1,0 +1,32 @@
+# V004 development teacher frames on $WJW (read-only)
+# Admitted: 235 frames (123 train + 112 validation)
+# Parent protocol SHA256: 227c22a527e567bc4de873ab743fe9f493779eccbb1a698d2913c87695ebf87a
+
+## Train
+ACGCNTKELWXJPN-UHFFFAOYSA-N  -> $WJW/data/runs/autofill_acgcntkelwxjpn-uhfffaoysa-n_v001/training_data  (36 frames)
+PDIYCCLDBKWBTK-UHFFFAOYSA-N  -> $WJW/data/runs/autofill_pdiyccldbkwbtk-uhfffaoysa-n_v001/training_data  (64)
+VNYHGZAUUQMMDL-UHFFFAOYSA-N  -> $WJW/data/runs/autofill_vnyhgzauuqmmdl-uhfffaoysa-n_v001/training_data  (23)
+
+## Validation
+KZYKDQNIIMATMJ-UHFFFAOYSA-N  -> $WJW/data/runs/autofill_kzykdqniimatmj-uhfffaoysa-n_v001/training_data  (41)
+RMEQTBVGGNKAEQ-UHFFFAOYSA-N  -> $WJW/data/runs/autofill_rmeqtbvggnkaeq-uhfffaoysa-n_v001/training_data  (71)
+
+## Incomplete (not admitted)
+CLXFIGGGSODORK-UHFFFAOYSA-N
+RBKFFSUUCLDQER-UHFFFAOYSA-N
+
+## Assembled products
+D3:      $WJW/data/runs/phase9b_aimnet2_v004_d3_projection_v001
+Weighted: $WJW/data/runs/phase9b_aimnet2_v004_weighted_dataset_v001
+
+## xTB full library (~401856)
+$WJW/results/calculations/20260628/imid_v4_crude/imid_full_v4menu_crude_0618_method.csv
+local: /Users/cc/nhc-deprot-ranker/data/processed/v001/candidates.parquet
+
+## Gold XYZ
+$WJW/data/runs/mol_gold/xyz/{KEY}_{cation|neutral}.xyz
+
+## Sealed Final Test
+commitment_sha256: 834f973954064565aa857e8d8c563d110d0f6256c99e54fc3283dc428efa6975
+root_count: 2
+identities_exposed_to_training: false
