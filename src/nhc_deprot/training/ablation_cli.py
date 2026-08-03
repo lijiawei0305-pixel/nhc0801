@@ -13,7 +13,7 @@ import json
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final, Literal
+from typing import TYPE_CHECKING, Any, Final, Literal
 
 from nhc_deprot.generation.layout import (
     DEFAULT_GENERATION_ID,
@@ -28,6 +28,9 @@ from nhc_deprot.training.config import (
     TrainingConfig,
 )
 from nhc_deprot.training.multi_seed_trainer import run_multi_seed_training
+
+if TYPE_CHECKING:
+    from nhc_deprot.training.multi_seed_trainer import TrainBackend
 
 TrainableScope = Literal["mlp", "mlp_shift"]
 
@@ -155,6 +158,38 @@ def parse_run_id_list(
     return out
 
 
+def _build_live_aimnet2_backend(
+    *,
+    layout: GenerationLayout,
+    config: TrainingConfig,
+    base_weight: Path,
+    device: str = "cuda",
+) -> TrainBackend:
+    """Construct :class:`LiveAimnet2TrainBackend` for one recipe (live only).
+
+    Uses the first seed in ``config.seeds`` for model/sampler init. Multi-seed
+    reuse of a single backend instance is a known multi_seed API limitation
+    (see ``nhc0801_live_orchestrate.py`` for per-seed construction).
+    """
+
+    # Lazy import: keep dry-run / unit tests free of torch + AIMNet2.
+    from nhc_deprot.training.live_aimnet2 import LiveAimnet2TrainBackend
+
+    weight = Path(base_weight)
+    if not weight.is_file():
+        raise AblationCliError(f"missing --base-weight file: {weight}")
+    seeds = config.seeds
+    if not seeds:
+        raise AblationCliError("TrainingConfig.seeds is empty; cannot build live backend")
+    return LiveAimnet2TrainBackend(
+        dataset_root=layout.datasets_dir,
+        base_weight=weight,
+        config=config,
+        seed=int(seeds[0]),
+        device=device,
+    )
+
+
 def run_train_ablation(
     *,
     layout: GenerationLayout,
@@ -164,17 +199,37 @@ def run_train_ablation(
     dry_run_epochs: int | None = 5,
     aimnet2_train_authorized: bool = False,
     base_config: TrainingConfig | None = None,
+    backend: TrainBackend | None = None,
+    base_weight: Path | None = None,
+    device: str = "cuda",
 ) -> dict[str, Any]:
     """Run multi-seed training once per ``run_id`` (sequential).
 
-    Does not start live torch unless ``dry_run=False`` and authorized backend
-    is supplied inside :func:`run_multi_seed_training` (caller responsibility).
+    Live train (``dry_run=False``) requires ``aimnet2_train_authorized`` and a
+    non-dry :class:`TrainBackend`. Callers may inject ``backend`` (tests /
+    custom), or pass ``base_weight`` so each recipe builds
+    :class:`LiveAimnet2TrainBackend` (same pattern as
+    ``nhc0801_live_orchestrate.py``). Dry-run ignores both and keeps the
+    multi-seed default :class:`DryRunTrainBackend`.
     """
 
     campaigns: list[dict[str, Any]] = []
     for rid in run_ids:
         cfg = training_config_for_run_id(rid, base=base_config)
         cfg.assert_policy()
+        active_backend: TrainBackend | None = backend
+        if not dry_run and active_backend is None:
+            if base_weight is None:
+                raise AblationCliError(
+                    "live ablation requires backend= or base_weight= "
+                    "to supply LiveAimnet2TrainBackend"
+                )
+            active_backend = _build_live_aimnet2_backend(
+                layout=layout,
+                config=cfg,
+                base_weight=base_weight,
+                device=device,
+            )
         camp = run_multi_seed_training(
             layout=layout,
             config=cfg,
@@ -183,6 +238,7 @@ def run_train_ablation(
             aimnet2_train_authorized=aimnet2_train_authorized,
             train_batch_id=train_batch_id,
             run_id=rid,
+            backend=active_backend,
         )
         campaigns.append(
             {
@@ -289,6 +345,20 @@ def build_train_ablation_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Gate flag required for live train",
     )
+    p.add_argument(
+        "--base-weight",
+        type=Path,
+        default=None,
+        help=(
+            "Path to official AIMNet2 base weight (.pt). "
+            "Required for --live; used to construct LiveAimnet2TrainBackend."
+        ),
+    )
+    p.add_argument(
+        "--device",
+        default="cuda",
+        help="Torch device for live LiveAimnet2TrainBackend (default: cuda)",
+    )
     return p
 
 
@@ -344,6 +414,7 @@ def main_train_ablation(
                     "required": [
                         "aimnet2_train_authorized",
                         "non-dry TrainBackend (torch/AIMNet2)",
+                        "--base-weight",
                         "resource claim PASS",
                     ],
                 },
@@ -352,6 +423,45 @@ def main_train_ablation(
             flush=True,
         )
         return 2
+
+    base_weight: Path | None = None
+    if not dry_run:
+        if args.base_weight is None:
+            print(
+                json.dumps(
+                    {
+                        "error": "live train requires --base-weight",
+                        "hint": (
+                            "path to aimnet2_wb97m_d3_0.pt "
+                            "(constructs LiveAimnet2TrainBackend per recipe)"
+                        ),
+                        "required": [
+                            "aimnet2_train_authorized",
+                            "--base-weight",
+                            "non-dry TrainBackend (LiveAimnet2TrainBackend)",
+                        ],
+                    },
+                    indent=2,
+                ),
+                flush=True,
+            )
+            return 2
+        base_weight = Path(args.base_weight)
+        # Fail closed before multi-seed: weight path must exist (no silent DryRun).
+        # LiveAimnet2TrainBackend is constructed per recipe inside run_train_ablation
+        # (see _build_live_aimnet2_backend; matches live_orchestrate base_weight wiring).
+        if not base_weight.is_file():
+            print(
+                json.dumps(
+                    {
+                        "error": f"missing --base-weight file: {base_weight}",
+                        "status": "FAIL",
+                    },
+                    indent=2,
+                ),
+                flush=True,
+            )
+            return 2
 
     layout = resolve_layout(
         generation_id=args.generation_id, nhc0801_root=root
@@ -369,6 +479,8 @@ def main_train_ablation(
             dry_run=dry_run,
             dry_run_epochs=int(args.epochs) if dry_run else None,
             aimnet2_train_authorized=bool(args.aimnet2_train_authorized),
+            base_weight=base_weight,
+            device=str(args.device),
         )
     except Exception as exc:  # noqa: BLE001 — CLI surface
         print(

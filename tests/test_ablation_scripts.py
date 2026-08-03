@@ -1,4 +1,7 @@
-"""M11: ablation matrix + thin-script argparse (no live train / DFT)."""
+"""M11: ablation matrix + thin-script argparse (no live train / DFT).
+
+M14prep: live path accepts injected non-dry backend; dry-run unchanged.
+"""
 
 from __future__ import annotations
 
@@ -6,9 +9,12 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+from nhc_deprot.data.paths import TRAIN_ROOTS, VALIDATION_ROOTS
+from nhc_deprot.generation.layout import init_generation
 from nhc_deprot.pipeline.ablation_cli import (
     build_ablation_table,
     build_ablation_table_parser,
@@ -19,6 +25,10 @@ from nhc_deprot.pipeline.ablation_cli import (
     main_pre_screen,
     rows_from_pre_screen_campaigns,
 )
+from nhc_deprot.pipeline.d3_projection import run_d3_campaign
+from nhc_deprot.pipeline.teacher_runner import DryRunTeacherEngine, run_teacher_campaign
+from nhc_deprot.pipeline.weighted_dataset_writer import assemble_weighted_dataset
+from nhc_deprot.resources.profiles import get_profile
 from nhc_deprot.training.ablation_cli import (
     DEFAULT_ABLATION_MATRIX,
     DEFAULT_ABLATION_RUN_IDS,
@@ -27,12 +37,84 @@ from nhc_deprot.training.ablation_cli import (
     main_train_ablation,
     parse_run_id_list,
     recipe_for_run_id,
+    run_train_ablation,
     training_config_for_run_id,
 )
-from nhc_deprot.training.config import TRAINABLE_MLP, TRAINABLE_MLP_SHIFT
+from nhc_deprot.training.config import TRAINABLE_MLP, TRAINABLE_MLP_SHIFT, TrainingConfig
+from nhc_deprot.training.multi_seed_trainer import DryRunTrainBackend
 
 REPO = Path(__file__).resolve().parents[1]
 SCRIPTS = REPO / "scripts"
+
+
+def _bootstrap_weighted_layout(tmp_path: Path):
+    """Minimal teacher→D3→weighted dataset for train ablation (no AIMNet2)."""
+
+    layout, _, _ = init_generation(nhc0801_root=tmp_path / "NHC0801")
+    roots = list(TRAIN_ROOTS) + list(VALIDATION_ROOTS)
+    run_teacher_campaign(
+        layout=layout,
+        root_ids=roots,
+        profile=get_profile("single_27_physical_v1"),
+        engine=DryRunTeacherEngine(frames_per_endpoint=2),
+        dry_run=True,
+    )
+    run_d3_campaign(layout=layout, root_ids=roots, dry_run=True, overwrite=True)
+    assemble_weighted_dataset(
+        layout=layout,
+        train_roots=list(TRAIN_ROOTS),
+        validation_roots=list(VALIDATION_ROOTS),
+        dry_run=True,
+        overwrite=True,
+    )
+    return layout
+
+
+class _MockLiveTrainBackend:
+    """Non-DryRun backend for live wiring tests — never loads torch/AIMNet2."""
+
+    def __init__(self) -> None:
+        self._inner = DryRunTrainBackend()
+        self.train_epoch_calls = 0
+        self.scheduler_steps: list[float] = []
+
+    def train_epoch(
+        self,
+        batches: Any,
+        *,
+        split_frame_count: int,
+        energy_weight: float,
+        forces_weight: float,
+        seed: int,
+        epoch: int,
+    ) -> dict[str, Any]:
+        self.train_epoch_calls += 1
+        return self._inner.train_epoch(
+            batches,
+            split_frame_count=split_frame_count,
+            energy_weight=energy_weight,
+            forces_weight=forces_weight,
+            seed=seed,
+            epoch=epoch,
+        )
+
+    def evaluate(
+        self,
+        batches: Any,
+        *,
+        energy_weight: float,
+        forces_weight: float,
+        energy_bias: float = 0.0,
+    ) -> dict[str, Any]:
+        return self._inner.evaluate(
+            batches,
+            energy_weight=energy_weight,
+            forces_weight=forces_weight,
+            energy_bias=energy_bias,
+        )
+
+    def step_scheduler(self, val_loss: float) -> None:
+        self.scheduler_steps.append(float(val_loss))
 
 
 # ---------------------------------------------------------------------------
@@ -95,15 +177,109 @@ def test_train_ablation_parser_help_and_defaults() -> None:
     help_text = p.format_help()
     assert "run-id" in help_text
     assert "list-matrix" in help_text
+    assert "base-weight" in help_text
     args = p.parse_args([])
     assert args.dry_run is True
     assert args.batch_id == "g001"
     assert args.run_ids is None
+    assert args.base_weight is None
+    assert args.device == "cuda"
 
 
 def test_train_ablation_list_matrix_exit0() -> None:
     code = main_train_ablation(["--list-matrix"])
     assert code == 0
+
+
+def test_train_ablation_live_without_base_weight_fails(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    """CLI live path must require --base-weight (M14prep wiring)."""
+
+    root = tmp_path / "NHC0801"
+    code = main_train_ablation(
+        [
+            "--nhc0801-root",
+            str(root),
+            "--live",
+            "--aimnet2-train-authorized",
+            "--run-id",
+            "e1f1_mlp",
+        ]
+    )
+    assert code == 2
+    err = json.loads(capsys.readouterr().out)
+    assert "base-weight" in err["error"]
+
+
+def test_run_train_ablation_dry_run_regression(tmp_path: Path) -> None:
+    """Default dry-run path still works without backend / base_weight."""
+
+    layout = _bootstrap_weighted_layout(tmp_path)
+    base = TrainingConfig(
+        seeds=(20260730,),
+        epochs=4,
+        checkpoint_interval_epochs=2,
+    )
+    summary = run_train_ablation(
+        layout=layout,
+        run_ids=("e1f1_mlp", "e1f100_mlp_shift"),
+        train_batch_id="g001",
+        dry_run=True,
+        dry_run_epochs=2,
+        base_config=base,
+    )
+    assert summary["status"] == "DRY_RUN_ABLATION_PASS"
+    assert summary["dry_run"] is True
+    assert summary["final_model_selected"] is False
+    assert summary["failed_run_count"] == 0
+    assert len(summary["campaigns"]) == 2
+    assert all(str(c["status"]).endswith("PASS") for c in summary["campaigns"])
+
+
+def test_run_train_ablation_live_with_mock_backend(tmp_path: Path) -> None:
+    """Injected non-dry backend satisfies multi_seed live gate (no AIMNet2)."""
+
+    layout = _bootstrap_weighted_layout(tmp_path)
+    backend = _MockLiveTrainBackend()
+    base = TrainingConfig(
+        seeds=(20260730,),
+        epochs=2,
+        checkpoint_interval_epochs=1,
+    )
+    summary = run_train_ablation(
+        layout=layout,
+        run_ids=("e1f100_mlp",),
+        train_batch_id="g001",
+        dry_run=False,
+        aimnet2_train_authorized=True,
+        base_config=base,
+        backend=backend,
+    )
+    assert summary["status"] == "LIVE_ABLATION_PASS"
+    assert summary["dry_run"] is False
+    assert summary["final_model_selected"] is False
+    assert summary["failed_run_count"] == 0
+    assert backend.train_epoch_calls == 2  # 1 seed × 2 epochs
+    assert len(backend.scheduler_steps) == 2
+    assert not isinstance(backend, DryRunTrainBackend)
+
+
+def test_run_train_ablation_live_without_backend_or_weight_fails(
+    tmp_path: Path,
+) -> None:
+    """Live without backend and without base_weight fails closed (no silent DryRun)."""
+
+    layout = _bootstrap_weighted_layout(tmp_path)
+    base = TrainingConfig(seeds=(20260730,), epochs=1)
+    with pytest.raises(AblationCliError, match="backend= or base_weight="):
+        run_train_ablation(
+            layout=layout,
+            run_ids=("e1f1_mlp",),
+            dry_run=False,
+            aimnet2_train_authorized=True,
+            base_config=base,
+        )
 
 
 def test_pre_screen_parser_help() -> None:
