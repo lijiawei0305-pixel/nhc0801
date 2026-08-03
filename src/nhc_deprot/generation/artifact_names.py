@@ -1,7 +1,7 @@
 """Canonical experimental artifact names under runs/<generation>/.
 
 Policy (AGENTS.md Experimental data naming):
-  - Product dirs: teacher_gpu_g00N/, epoch0_val_batches/g00N/, train_batches/g00N/
+  - Product dirs: teacher_gpu_g00N/, epoch0_val_batches/g00N/, train_g00N/
   - Log basenames: prefer group-scoped stable names; accept legacy *02c* as read aliases
   - Engineering module names (gpu_autofill) may differ from user-facing g00N labels
 
@@ -14,27 +14,37 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Final, Iterable, Sequence
 
-# --- Fine-tune / AIMNet2 train (group-scoped) ---
-# Human: "g00N train" → train_batches/g00N/
-TRAIN_BATCHES_DIR: Final = "train_batches"
-TRAIN_MANIFEST_JSON: Final = "train_manifest.json"
-TRAIN_CAMPAIGN_RECEIPT_JSON: Final = "campaign_receipt.json"
-TRAIN_SEED_RECEIPT_JSON: Final = "seed_receipt.json"
-TRAIN_DIR_LEGACY: Final = "train"  # pilot only; do not write new campaigns here
+# --- Fine-tune / AIMNet2 train (group-scoped, flat like teacher_gpu_g00N) ---
+# Human: "g001 的训练" → train_g001/
+TRAIN_DIR_PREFIX: Final = "train_"  # train_g001, train_g002, …
+TRAIN_INFO_JSON: Final = "train_info.json"  # 这次训了谁、用什么设定
+TRAIN_RESULT_JSON: Final = "train_result.json"  # 多种子训练总结果
+TRAIN_SEED_RESULT_JSON: Final = "seed_result.json"  # 某一个随机种子的结果
+# obsolete / legacy (read only)
+TRAIN_BATCHES_DIR_LEGACY: Final = "train_batches"
+TRAIN_CAMPAIGN_RECEIPT_LEGACY: Final = "campaign_receipt.json"
+TRAIN_SEED_RECEIPT_LEGACY: Final = "seed_receipt.json"
+TRAIN_DIR_LEGACY: Final = "train"  # pilot flat train/; do not write new runs here
+
+
+def train_product_dirname(batch_id: str) -> str:
+    """Directory name for one group fine-tune, e.g. train_g001."""
+    bid = str(batch_id).strip()
+    return f"train_{bid}"
 
 
 def train_log_basename(batch_id: str) -> str:
     """Stdout log for one train group, e.g. train_g001.out."""
-    bid = str(batch_id).strip()
-    return f"train_{bid}.out"
+    return f"{train_product_dirname(batch_id)}.out"
 
 
 def train_seed_dirname(seed: int) -> str:
+    """Random-seed folder, e.g. seed_20260730 (number is RNG seed, not a calendar date)."""
     return f"seed_{int(seed)}"
 
 
 def train_checkpoint_stem(epoch: int) -> str:
-    """Shared stem for weights + meta: epoch_NNNN."""
+    """Shared stem for weights + meta: epoch_NNNN (training round index)."""
     return f"epoch_{int(epoch):04d}"
 
 
@@ -75,9 +85,10 @@ GPU_TEACHER_STATE_DIR: Final = "gpu_teacher_queue"
 GPU_TEACHER_STATE_DIR_LEGACY: Final = "gpu_autofill"  # migrate → gpu_teacher_queue
 GPU_TEACHER_LOG_TAG: Final = "gpu-teacher"  # stdout tag for humans
 
-# Banned product names for new fine-tune writes (read of legacy train/ is OK)
+# Banned product names for new fine-tune writes (read of legacy is OK)
 TRAIN_BANNED_WRITE_NAMES: Final = (
     "train",  # bare generation-level train/ as new campaign root
+    "train_batches",  # obsolete nested form
     "finetune",
     "ft",
     "ckpts",

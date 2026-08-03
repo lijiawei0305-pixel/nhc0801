@@ -152,9 +152,9 @@ def run_shortlist_campaign(
     train_dir: Path | None = None,
     train_batch_id: str = "g001",
 ) -> dict[str, Any]:
-    """Aggregate seed shortlists under train_batches/g00N → sci_val/shortlist_campaign.json.
+    """Aggregate seed shortlists under train_g00N → sci_val/shortlist_campaign.json.
 
-    Prefer canonical ``train_batches/<batch_id>/``; fall back to legacy ``train/`` for g001.
+    Prefer canonical ``train_g00N/``; fall back to legacy paths for g001 if needed.
     """
 
     cfg = TrainingConfig()
@@ -169,7 +169,9 @@ def run_shortlist_campaign(
     per_seed: list[dict[str, Any]] = []
     all_candidates: list[dict[str, Any]] = []
     for sd in seed_dirs:
-        receipt_path = sd / "seed_receipt.json"
+        receipt_path = sd / "seed_result.json"
+        if not receipt_path.is_file():
+            receipt_path = sd / "seed_receipt.json"  # legacy name
         rec = load_seed_receipt(receipt_path)
         one = shortlist_for_seed(rec, maximum_count=max_n, recompute=recompute)
         # attach weight path if present for shortlist epochs

@@ -58,18 +58,19 @@ def test_teacher_paths(tmp_path: Path) -> None:
 
 def test_train_batch_paths(tmp_path: Path) -> None:
     layout = resolve_layout(nhc0801_root=tmp_path / "NHC0801")
-    assert layout.train_batch_dir("g001") == layout.generation_root / "train_batches" / "g001"
-    assert layout.train_batch_dir("g002").as_posix().endswith("train_batches/g002")
+    assert layout.train_batch_dir("g001") == layout.generation_root / "train_g001"
+    assert layout.train_batch_dir("g002").name == "train_g002"
     assert layout.train_seed_dir("g001", 20260730).name == "seed_20260730"
     assert layout.train_checkpoint_weight_path("g001", 20260730, 200).name == "epoch_0200.pt"
     assert layout.train_checkpoint_meta_path("g001", 20260730, 5).name == "epoch_0005.meta.json"
-    assert layout.train_campaign_receipt_path("g003").name == "campaign_receipt.json"
+    assert layout.train_campaign_receipt_path("g003").name == "train_result.json"
+    assert layout.train_seed_receipt_path("g001", 1).name == "seed_result.json"
     assert layout.train_batch_logs_dir("g001").name == "logs"
     # g001 read: empty scaffold ignored; legacy train/ with seed_* wins
     layout.train_batch_dir("g001").mkdir(parents=True)
     layout.train_dir.mkdir(parents=True)
     (layout.train_dir / "seed_1").mkdir()
     assert layout.resolve_train_batch_dir_for_read("g001") == layout.train_dir
-    # canonical with seed_* preferred
+    # canonical train_g001 with seed_* preferred
     (layout.train_batch_dir("g001") / "seed_2").mkdir()
     assert layout.resolve_train_batch_dir_for_read("g001") == layout.train_batch_dir("g001")

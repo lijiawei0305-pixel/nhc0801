@@ -135,15 +135,15 @@ def scan_generation_status(layout: GenerationLayout) -> dict[str, Any]:
         ],
         4: [
             layout.train_campaign_receipt_path("g001"),
-            layout.train_batch_dir("g001") / "campaign_receipt_live.json",
-            layout.logs_dir / "train_campaign_g001.json",
+            layout.logs_dir / "train_g001_result.json",
+            layout.train_batch_dir("g001") / "campaign_receipt.json",  # obsolete name
             layout.train_dir / "campaign_receipt_live.json",  # legacy pilot
             layout.train_dir / "campaign_receipt.json",
         ],
         5: [
             layout.train_campaign_receipt_path("g001"),
-            layout.train_batch_dir("g001") / "campaign_receipt_live.json",
-            layout.logs_dir / "train_campaign_g001.json",
+            layout.logs_dir / "train_g001_result.json",
+            layout.train_batch_dir("g001") / "campaign_receipt.json",
             layout.train_dir / "campaign_receipt_live.json",
             layout.train_dir / "campaign_receipt.json",
         ],
@@ -156,7 +156,9 @@ def scan_generation_status(layout: GenerationLayout) -> dict[str, Any]:
     train_metrics: list[dict[str, Any]] = []
     train_scan = layout.resolve_train_batch_dir_for_read("g001")
     for seed_dir in sorted(train_scan.glob("seed_*")) if train_scan.is_dir() else []:
-        rec = _safe_load(seed_dir / "seed_receipt.json")
+        rec = _safe_load(seed_dir / "seed_result.json") or _safe_load(
+            seed_dir / "seed_receipt.json"
+        )
         if not rec:
             continue
         logs = rec.get("epoch_logs") or []

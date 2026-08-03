@@ -81,11 +81,11 @@ def test_multi_seed_dry_run_retains_all_outcomes(tmp_path: Path) -> None:
     )
     assert receipt["final_model_selected"] is False
     assert receipt["batch_id"] == "g001"
-    assert receipt["product_rel"] == "train_batches/g001"
-    # products under train_batches/g001/seed_*/epoch_*.meta.json — not bare train/
+    assert receipt["product_rel"] == "train_g001"
+    # products under train_g001/seed_*/epoch_*.meta.json — not bare train/
     seed_dir = layout.train_seed_dir("g001", 20260730)
     assert seed_dir.is_dir()
-    assert (seed_dir / "seed_receipt.json").is_file()
+    assert (seed_dir / "seed_result.json").is_file()
     assert not (layout.train_dir / "campaign_receipt.json").exists()
 
 

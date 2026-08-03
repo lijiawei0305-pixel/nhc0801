@@ -30,7 +30,7 @@ PARALLEL_STRATEGY: Final = "S"
 # Subdirectories under runs/<generation_id>/
 # Teacher groups: teacher_gpu_g00N/ (uniform; g001 pilot included)
 # Epoch-0 groups: epoch0_val_batches/g00N/
-# Fine-tune groups: train_batches/g00N/ (seed_* / epoch_NNNN.pt)
+# Fine-tune groups: train_g00N/ (same flat style as teacher_gpu_g00N/)
 GENERATION_SUBDIRS: Final = (
     "meta",
     "resources",
@@ -39,9 +39,9 @@ GENERATION_SUBDIRS: Final = (
     "datasets/weighted",
     "epoch0_val_batches/g001/epoch0",
     "epoch0_val_batches/g001/logs",
-    "train_batches/g001",
-    "train_batches/g001/logs",
-    "train",  # legacy pilot only; new writes use train_batches/g00N/
+    "train_g001",
+    "train_g001/logs",
+    "train",  # legacy pilot only; new writes use train_g00N/
     "sci_val",
     "freeze",
     "logs",
@@ -51,8 +51,8 @@ GENERATION_SUBDIRS: Final = (
 G001_EPOCH0_REL: Final = "epoch0_val_batches/g001/epoch0"
 # Standard human name: "g001 teacher" → teacher_gpu_g001/
 G001_TEACHER_REL: Final = "teacher_gpu_g001"
-# Standard human name: "g001 train" / "g001 微调" → train_batches/g001/
-G001_TRAIN_REL: Final = "train_batches/g001"
+# Standard human name: "g001 train" / "g001 微调" → train_g001/
+G001_TRAIN_REL: Final = "train_g001"
 
 
 class GenerationError(RuntimeError):
@@ -113,29 +113,26 @@ class GenerationLayout:
         """Campaign receipts for g00N Epoch-0: .../epoch0_val_batches/<batch_id>/epoch0/."""
         return self.epoch0_batch_root(batch_id) / "epoch0"
 
-    def train_batches_root(self) -> Path:
-        """Parent of all fine-tune group dirs: train_batches/."""
-        return self.generation_root / "train_batches"
-
     def train_batch_dir(self, batch_id: str) -> Path:
-        """Fine-tune product dir for group g00N: train_batches/<batch_id>/.
+        """Fine-tune product dir for group g00N: train_g00N/.
 
-        Human name: **g00N train** / **g00N 微调**. Uniform for all groups.
+        Same flat pattern as ``teacher_gpu_g00N/``.
+        Human name: **g00N train** / **g00N 微调**.
         Do not use bare ``train/`` as the canonical write path for new runs.
         """
         bid = _normalize_batch_id(batch_id)
-        return self.train_batches_root() / bid
+        return self.generation_root / f"train_{bid}"
 
     def train_batch_logs_dir(self, batch_id: str) -> Path:
-        """Logs for one train group: train_batches/g00N/logs/."""
+        """Logs for one train group: train_g00N/logs/."""
         return self.train_batch_dir(batch_id) / "logs"
 
     def train_seed_dir(self, batch_id: str, seed: int) -> Path:
-        """One seed under a train group: train_batches/g00N/seed_<seed>/."""
+        """One random-seed run: train_g00N/seed_<seed>/."""
         return self.train_batch_dir(batch_id) / f"seed_{int(seed)}"
 
     def train_checkpoint_meta_path(self, batch_id: str, seed: int, epoch: int) -> Path:
-        """Checkpoint meta JSON: .../seed_<seed>/epoch_NNNN.meta.json."""
+        """Checkpoint meta: .../seed_<seed>/epoch_NNNN.meta.json."""
         return self.train_seed_dir(batch_id, seed) / f"epoch_{int(epoch):04d}.meta.json"
 
     def train_checkpoint_weight_path(self, batch_id: str, seed: int, epoch: int) -> Path:
@@ -143,40 +140,49 @@ class GenerationLayout:
         return self.train_seed_dir(batch_id, seed) / f"epoch_{int(epoch):04d}.pt"
 
     def train_campaign_receipt_path(self, batch_id: str) -> Path:
-        """Multi-seed campaign receipt: train_batches/g00N/campaign_receipt.json."""
-        return self.train_batch_dir(batch_id) / "campaign_receipt.json"
+        """Whole multi-seed train result: train_g00N/train_result.json."""
+        return self.train_batch_dir(batch_id) / "train_result.json"
 
     def train_manifest_path(self, batch_id: str) -> Path:
-        """Train identity manifest (roots, teacher sources, hyperparams)."""
-        return self.train_batch_dir(batch_id) / "train_manifest.json"
+        """What was trained (roots, teacher sources, hyperparams): train_info.json."""
+        return self.train_batch_dir(batch_id) / "train_info.json"
 
     def train_seed_receipt_path(self, batch_id: str, seed: int) -> Path:
-        return self.train_seed_dir(batch_id, seed) / "seed_receipt.json"
+        """One seed's result: seed_result.json."""
+        return self.train_seed_dir(batch_id, seed) / "seed_result.json"
 
     def resolve_train_batch_dir_for_read(self, batch_id: str) -> Path:
-        """Prefer train_batches/g00N when it has train products; else legacy train/ for g001.
+        """Prefer train_g00N when it has products; else legacy train/ for g001.
 
-        Empty scaffold dirs from :func:`ensure_generation_tree` do not count as products.
-        New writes must always use :meth:`train_batch_dir`.
+        Also accepts obsolete ``train_batches/g00N`` if present (read-only).
+        Empty scaffold dirs do not count as products.
+        New writes must always use :meth:`train_batch_dir` → ``train_g00N/``.
         """
-        canonical = self.train_batch_dir(batch_id)
-        if canonical.is_dir() and (
-            any(canonical.glob("seed_*"))
-            or (canonical / "campaign_receipt.json").is_file()
-        ):
-            return canonical
         bid = _normalize_batch_id(batch_id)
-        if bid == "g001" and self.train_dir.is_dir() and (
-            any(self.train_dir.glob("seed_*"))
-            or (self.train_dir / "campaign_receipt.json").is_file()
-            or (self.train_dir / "campaign_receipt_live.json").is_file()
-        ):
-            return self.train_dir
-        if canonical.is_dir():
-            return canonical
-        if bid == "g001" and self.train_dir.is_dir():
-            return self.train_dir
-        return canonical
+        candidates = [
+            self.train_batch_dir(batch_id),  # train_g00N
+            self.generation_root / "train_batches" / bid,  # obsolete nested form
+        ]
+        if bid == "g001":
+            candidates.append(self.train_dir)  # legacy pilot train/
+
+        def _has_products(d: Path) -> bool:
+            if not d.is_dir():
+                return False
+            return bool(
+                any(d.glob("seed_*"))
+                or (d / "train_result.json").is_file()
+                or (d / "campaign_receipt.json").is_file()
+                or (d / "campaign_receipt_live.json").is_file()
+            )
+
+        for d in candidates:
+            if _has_products(d):
+                return d
+        for d in candidates:
+            if d.is_dir():
+                return d
+        return self.train_batch_dir(batch_id)
 
 
 def _normalize_batch_id(batch_id: str) -> str:

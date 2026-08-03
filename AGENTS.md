@@ -77,45 +77,42 @@ Conflict order: **mindmap.md** → **`docs/contracts/COMPUTE_DISPATCH_V001.md`**
 | --- | --- | --- |
 | 老师帧 | **g00N teacher** | **`teacher_gpu_g00N/`** |
 | Epoch-0 基线 | **g00N Epoch-0** | **`epoch0_val_batches/g00N/`**（其下可有 `epoch0/`、`logs/`） |
-| AIMNet2 微调 | **g00N train** | **`train_batches/g00N/`**（其下 `seed_*`、`epoch_NNNN.pt`） |
+| AIMNet2 微调 | **g00N train** / **g00N 微调** | **`train_g00N/`**（与 `teacher_gpu_g00N/` 同扁平风格） |
 | generation 总目录 | — | **`runs/nhc0801-g001/`**（勿简写成 `runs/g001/`） |
 
-**强制同构示例：**
+**强制同构示例（小白一眼能对上号）：**
 
 ```text
-teacher_gpu_g001/     ← g001 teacher（含 pilot；不要再叫 teacher/）
-teacher_gpu_g002/     ← g002 teacher（不要再叫 teacher_gpu_side/）
-teacher_gpu_g003/     ← g003 teacher
-epoch0_val_batches/g001/   ← g001 Epoch-0
-epoch0_val_batches/g002/   ← g002 Epoch-0
-train_batches/g001/        ← g001 train / 微调
-train_batches/g002/        ← g002 train（若单独开训）
+teacher_gpu_g001/     ← 第 1 组的老师数据
+teacher_gpu_g002/     ← 第 2 组的老师数据
+epoch0_val_batches/g001/   ← 第 1 组 Epoch-0
+train_g001/           ← 第 1 组的模型微调结果
+train_g002/           ← 第 2 组的模型微调结果（若单独开训）
 ```
 
-**微调目录内文件命名（强制）：**
+**微调目录里有什么（强制）：**
 
 ```text
-train_batches/g00N/
-  train_manifest.json          # 可选：训练身份（roots、老师来源、超参）
-  campaign_receipt.json        # 多种子 campaign 总收据
+train_g001/
+  train_info.json              # 这次训了谁、用什么设定（可选）
+  train_result.json            # 整次训练总结果（多种子汇总）
   logs/
-    train_g00N.out             # 组级日志（basename 必须带 g00N）
-  seed_<seed>/                 # 例 seed_20260730
-    seed_receipt.json
-    epoch_0005.pt              # 权重：epoch_ + 四位十进制
-    epoch_0005.meta.json       # 与 .pt 同 stem
-    epoch_0200.pt
+    train_g001.out             # 运行日志
+  seed_20260730/               # 一个随机种子跑出来的一条训练线
+    seed_result.json           # 这条线的结果
+    epoch_0005.pt              # 第 5 轮保存的模型权重
+    epoch_0005.meta.json       # 同上轮的文字说明（loss 等）
+    epoch_0200.pt              # 第 200 轮
     epoch_0200.meta.json
 ```
 
 | 正确 | 错误（禁止新写） |
 | --- | --- |
-| `train_batches/g001/seed_20260730/epoch_0200.pt` | `train/best.pt`、`train/latest.pt`、`ckpts/model.pt` |
-| `train_batches/g001/campaign_receipt.json` | 无组号的 `runs/.../train/campaign_receipt.json` 作为**新** campaign 主路径 |
-| 收据字段含 **`batch_id`: `g00N`** | 只有 seed/epoch、无法定位组号 |
+| `train_g001/seed_20260730/epoch_0200.pt` | `train/best.pt`、`latest.pt`、`ckpts/model.pt` |
+| `train_g001/train_result.json` | 无组号的裸 `train/` 当新结果主目录 |
+| 结果 JSON 里有 **`batch_id`: `g001`** | 只有 seed/epoch、看不出是哪一组 |
 
-旧 pilot 目录 **`train/`**（`seed_*` 直接挂在下面）**只读兼容**；**新微调只写 `train_batches/g00N/`**。
-### 3) 目录 / 收据内部字段
+旧 pilot 的 **`train/`**、曾用过的 **`train_batches/g00N/`**：**只读兼容**；**新微调只写 `train_g00N/`**。### 3) 目录 / 收据内部字段
 
 - 收据 JSON 必须可定位组号：含 **`batch_id`**（`g00N`）和/或写在 **规范路径** 下。  
 - 禁止同一科学对象多套「官方」路径并存写；兼容旧路径时 **只允许只读 fallback 或 symlink**，新写只进规范路径。  
@@ -137,7 +134,7 @@ train_batches/g00N/
 | `teacher_gpu_side/` | `teacher_gpu_g002/` |
 | `teacher_cpu/`、`teacher_gpu/`（无组号） | `teacher_gpu_g00N/` |
 | 顶层 `epoch0/` 作为 g001 专用规范位 | `epoch0_val_batches/g001/` |
-| 顶层 `train/` 作为新微调规范位 | `train_batches/g00N/` |
+| 顶层 `train/` 或 `train_batches/` 作为新微调规范位 | `train_g00N/` |
 | `best.pt` / `latest.pt` / 无 epoch 编号的权重 | `epoch_NNNN.pt`（四位） |
 | 「Autofill 批 / 扩展批 / 侧线 e0」 | **g00N** / **g00N Epoch-0** / **g00N train** |
 | `runs/g001/` | `runs/nhc0801-g001/` |
@@ -145,11 +142,10 @@ train_batches/g00N/
 ### 6) 写代码 / 写文档时的自检
 
 1. 新产物路径是否含 **`g00N` 组号**？  
-2. teacher 是否落在 **`teacher_gpu_g00N/`**？Epoch-0 是否落在 **`epoch0_val_batches/g00N/`**？微调是否落在 **`train_batches/g00N/`**？  
-3. checkpoint 是否为 **`seed_<seed>/epoch_NNNN.{pt,meta.json}`**？  
-4. 对人说明是否 **零 Autofill / 零 side / 零无名 teacher/ 或 train/**？  
-5. 合同、计划、TUI、脚本 help 是否与上表一致？（改路径必改合同或升版）
----
+2. teacher → **`teacher_gpu_g00N/`**？Epoch-0 → **`epoch0_val_batches/g00N/`**？微调 → **`train_g00N/`**？  
+3. 模型文件是否为 **`seed_<数字>/epoch_NNNN.pt`**（NNNN 是训练轮次，不是日期）？  
+4. 对人说明是否 **零 Autofill / 零 side / 零无名 train/**？  
+5. 文件名是否用 **result / info** 等直白词，而不是只有 receipt/campaign 黑话？---
 
 ## Documentation rules（写文档规矩）
 

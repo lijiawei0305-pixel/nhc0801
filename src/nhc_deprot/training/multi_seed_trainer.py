@@ -380,7 +380,7 @@ def run_multi_seed_training(
 ) -> dict[str, Any]:
     """Run multi-seed training skeleton over generation weighted dataset.
 
-    Products land under ``train_batches/<train_batch_id>/`` (human: g00N train).
+    Products land under ``train_<train_batch_id>/`` (e.g. train_g001; human: g001 微调).
     """
     cfg = config or TrainingConfig()
     cfg.assert_policy()
@@ -467,7 +467,7 @@ def run_multi_seed_training(
         "generation_id": layout.generation_id,
         "batch_id": train_batch_id,
         "product_dir": str(train_root),
-        "product_rel": f"{anames.TRAIN_BATCHES_DIR}/{train_batch_id}",
+        "product_rel": anames.train_product_dirname(train_batch_id),
         "dry_run": dry_run,
         "live_chemistry": not dry_run,
         "aimnet2_train_authorized": aimnet2_train_authorized,
@@ -494,7 +494,7 @@ def run_multi_seed_training(
             )
         ),
         "notes": [
-            "products under train_batches/g00N/ only (not bare train/)",
+            "products under train_g00N/ only (not bare train/ or train_batches/)",
             "quick-val loss only shortlists; never final model",
             "retain all seeds/epochs/failures",
             "dry-run SimulatedResidualModel is not AIMNet2",
@@ -503,9 +503,9 @@ def run_multi_seed_training(
         "final_test_payload_read": False,
     }
     write_json(layout.train_campaign_receipt_path(train_batch_id), campaign, overwrite=True)
-    # Group-scoped copy under generation logs/ (basename carries g00N)
+    # Copy under generation logs/ with the same clear basename family
     write_json(
-        layout.logs_dir / f"train_campaign_{train_batch_id}.json",
+        layout.logs_dir / f"train_{train_batch_id}_result.json",
         campaign,
         overwrite=True,
     )
