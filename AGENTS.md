@@ -78,7 +78,7 @@ Conflict order: **mindmap.md** → **`docs/contracts/COMPUTE_DISPATCH_V001.md`**
 | 老师帧 | **g00N teacher** | **`teacher_gpu_g00N/`** |
 | Epoch-0 基线 | **g00N Epoch-0** | **`epoch0_val_batches/g00N/`**（其下可有 `epoch0/`、`logs/`） |
 | AIMNet2 训练过程 | **g00N train** | **`train_g00N/`**（中间 checkpoint，按 seed/epoch） |
-| **发布模型版本** | **v0.1 / v0.2 …** | **`models/v0.1/model.pt`**（短版本号；权重固定叫 `model.pt`） |
+| **发布模型版本** | **v0.1 / v0.2 …** | **`models/v0.1/`**：`model.pt` + `info.json` + **`card.svg`/`card.json`** |
 | generation 总目录 | — | **`runs/nhc0801-g001/`**（勿简写成 `runs/g001/`） |
 
 **强制同构示例（小白一眼能对上号）：**
@@ -134,11 +134,20 @@ train_g001/
 **发布版本目录（强制短名）：**
 
 ```text
-models/v0.1/model.pt      ← 唯一权重名
-models/v0.1/info.json
-models/v0.2/model.pt
+models/v0.1/
+  model.pt       ← 唯一权重名
+  info.json
+  card.json      ← 特征数据（必出）
+  card.svg       ← 发布特征图（必出；每发一版更新）
+models/v0.2/
+  model.pt
+  info.json
+  card.json
+  card.svg
 ```
 
+**每发布一版必须生成特征卡片**（`model_card.write_model_card` / `scripts/nhc0801_render_model_card.py`）。  
+卡上特征：身份、化学/DFT 参考、训练来源、帧级 E/F（仅筛选）、科学路线指标（ΔE_deprot、相对 e0 步数/墙钟、handoff/拓扑通过率）、SHA 前缀。
 | 正确 | 错误 |
 | --- | --- |
 | `models/v0.1/model.pt` | `aimnet2_wb97m_ft_g001_seed_…_epoch_0200.pt` |

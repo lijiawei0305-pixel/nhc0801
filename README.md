@@ -161,7 +161,50 @@ flowchart TB
         → ωB97M-D3(BJ)/def2-TZVPP 完整优化 → 单点与 ΔE_deprot
 ```
 
-规模化按 **`g00N`**（5 root = 3 Train + 2 Val）：老师帧 `teacher_gpu_g00N/`，Epoch-0 `epoch0_val_batches/g00N/`。进度见 [`progress.md`](progress.md)。
+规模化按 **`g00N`**（5 root = 3 Train + 2 Val）：老师帧 `teacher_gpu_g00N/`，Epoch-0 `epoch0_val_batches/g00N/`，训练过程 `train_g00N/`。进度见 [`progress.md`](progress.md)。
+
+---
+
+## 模型发布：train_g00N → v0.N
+
+训练过程与正式发布模型分开命名：
+
+| 训练过程 | 发布版本 | 内容 |
+| --- | --- | --- |
+| `train_g001/` | **v0.1** → `models/v0.1/` | `model.pt` + `info.json` + **特征卡片** |
+| `train_g002/` | **v0.2** → `models/v0.2/` | 同上 |
+| `train_g00N/` | **v0.N** | 组号 N 对应小版本号 N |
+
+```text
+models/v0.1/
+  model.pt      # 权重（固定短名）
+  info.json     # 来源 seed/epoch、sha256
+  card.json     # 特征数据（可机读）
+  card.svg      # 发布图（给人看）
+```
+
+**每次发布新版本必须生成一张特征卡片**（`card.svg`）。  
+卡片要同时覆盖：领域里 ML 力场常用指标，以及本项目科学路线上的结果——**不能只有帧级 loss**。
+
+### 卡片上展示哪些特征（设计说明）
+
+结合 AIMNet2 / MLFF 文献里常见的 **energy–force（EF）精度**，以及本仓库 mindmap 的 **完整几何 + 脱质子标签** 口径，每张卡分六块：
+
+| 区块 | 特征 | 为何需要 |
+| --- | --- | --- |
+| **Identity** | 版本 `v0.N`、标题、基座 `aimnet2_wb97m_d3_0`、路径 `models/v0.N/model.pt` | 一眼认出是哪一版 |
+| **Chemistry & reference** | 反应 `NHC-H+ → NHC + H+`；参考 DFT ωB97M-D3(BJ)/def2-TZVPP；学短程残差 E/F；标签只用 DFT | 化学任务与老师级别写死，避免和别的栈混淆 |
+| **Training** | 来自 `train_g00N`、root/帧数、seed、epoch、**由科学 Validation 选模** | 对应固定顺序 g001→v0.1；强调不是 quick-val 终选 |
+| **Frame metrics（仅筛选用）** | 能量 MAE/RMSE、力 MAE/RMSE | MLFF 社区标配；**只作监测/短名单，不写「最终冠军」** |
+| **Scientific route（选模依据）** | ΔE_deprot 相对 DFT 参考的误差；相对 **Epoch-0** 的 parent 步数/墙钟比；handoff 通过率；拓扑/身份通过率；评估了几个 Val root | 本项目真正关心：handoff 后完整 DFT 路线是否更省、标签是否站得住 |
+| **Provenance** | 权重 SHA256 前缀、备注 | 可核对、可复现 |
+
+实现：`src/nhc_deprot/training/model_card.py`；登记发布时默认写出卡片。本地可演示：
+
+```bash
+PYTHONPATH=src python scripts/nhc0801_render_model_card.py --demo --version v0.1
+# → runs/.../models/v0.1/card.svg
+```
 
 ---
 
@@ -170,7 +213,7 @@ flowchart TB
 | 路径 | 作用 |
 | --- | --- |
 | `mindmap.md` | 科学流程真值（方框图） |
-| `AGENTS.md` | 协作与实现约定 |
+| `AGENTS.md` | 协作与命名约定 |
 | `PHASE_STATUS.md` | 阶段状态 |
 | `progress.md` | 各组 teacher / Epoch-0 进度 |
 | `src/nhc_deprot/` | 库代码 |
@@ -178,7 +221,6 @@ flowchart TB
 | `tests/` | 合成 fixture 单测 |
 
 科学口径以 `mindmap.md` 为准。
-
 ---
 
 ## 本地开发

@@ -20,10 +20,13 @@ from typing import Any
 from nhc_deprot.data.io_util import sha256_file, write_json
 from nhc_deprot.generation import artifact_names as anames
 from nhc_deprot.generation.layout import (
-    GenerationError,
     GenerationLayout,
     default_model_version_for_train_batch,
     normalize_model_version,
+)
+from nhc_deprot.training.model_card import (
+    card_features_from_info,
+    write_model_card,
 )
 
 MODEL_INFO_SCHEMA = "nhc0801-model-version-info-v1"
@@ -45,8 +48,10 @@ def register_model_version(
     overwrite: bool = False,
     copy_weights: bool = True,
     enforce_train_batch_version_order: bool = True,
+    write_card: bool = True,
+    card_metrics: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
-    """Promote a training checkpoint to models/vX.Y/model.pt + info.json.
+    """Promote a training checkpoint to models/vX.Y/model.pt + info.json [+ card].
 
     Default release order (remember this):
 
@@ -57,6 +62,7 @@ def register_model_version(
     If ``version`` is omitted and ``train_batch_id`` is set, the default map is used.
     If both are set and ``enforce_train_batch_version_order`` is True, they must match.
     Weight product name is always ``model.pt``.
+    When ``write_card`` is True, also write ``card.json`` + ``card.svg`` feature card.
     """
     if version is None:
         if not train_batch_id:
@@ -124,6 +130,11 @@ def register_model_version(
         ],
     }
     write_json(info_path, info, overwrite=True)
+    if write_card:
+        feat = card_features_from_info(info, extras=card_metrics or {})
+        card_paths = write_model_card(layout, feat, overwrite=True)
+        info["card_json"] = card_paths["card_json"]
+        info["card_svg"] = card_paths["card_svg"]
     return info
 
 

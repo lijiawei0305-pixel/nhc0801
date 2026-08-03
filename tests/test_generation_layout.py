@@ -115,6 +115,11 @@ def test_model_version_paths_and_register(tmp_path: Path) -> None:
     assert layout.model_weight_path("v0.1").is_file()
     assert layout.model_weight_path("v0.1").read_bytes() == b"fake-weights"
     assert list_model_versions(layout) == ["v0.1"]
+    assert layout.model_version_dir("v0.1").joinpath("card.svg").is_file()
+    assert layout.model_version_dir("v0.1").joinpath("card.json").is_file()
+    assert "v0.1" in layout.model_version_dir("v0.1").joinpath("card.svg").read_text(
+        encoding="utf-8"
+    )
 
     # g001 must not publish as v0.2
     with pytest.raises(ModelVersionError, match="v0.1"):
