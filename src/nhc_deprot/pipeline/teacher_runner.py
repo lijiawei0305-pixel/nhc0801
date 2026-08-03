@@ -36,7 +36,7 @@ from nhc_deprot.contracts.parent_protocol import (
     PROTOCOL_ID,
     PROTOCOL_SHA256,
 )
-from nhc_deprot.data.io_util import write_json
+from nhc_deprot.data.io_util import load_json_object, write_json
 from nhc_deprot.data.paths import TRAIN_ROOTS, VALIDATION_ROOTS
 from nhc_deprot.generation.layout import GenerationLayout
 from nhc_deprot.resources.profiles import ResourceProfile, get_profile
@@ -153,11 +153,73 @@ def _assert_no_final_test_roots(root_ids: Sequence[str]) -> None:
             raise TeacherRunnerError(f"refusing Final Test-like root id: {root_id}")
 
 
+def select_trajectory_frame_indices(frame_count: int, stride: int = 1) -> list[int]:
+    """Pick indices from a full evaluation trajectory for on-disk frames.
+
+    Always keeps the first and last evaluation. With ``stride == 1`` every
+    evaluation is kept (default; no thinning). Intermediate frames are taken
+    every ``stride`` steps when ``stride > 1``.
+
+    Frame counts are variable-length; callers must not hard-code 2.
+    """
+
+    if frame_count <= 0:
+        raise TeacherRunnerError("frame_count must be positive")
+    if stride < 1:
+        raise TeacherRunnerError(f"trajectory_stride must be >= 1, got {stride}")
+    if frame_count == 1:
+        return [0]
+    if stride == 1:
+        return list(range(frame_count))
+    indices = list(range(0, frame_count, stride))
+    last = frame_count - 1
+    if indices[-1] != last:
+        indices.append(last)
+    return indices
+
+
+def frames_from_endpoint_manifest(manifest: Mapping[str, Any]) -> list[dict[str, Any]]:
+    """Iterate endpoint frames from manifest ``frames`` (or dynamic frame_count).
+
+    Prefer the explicit ``frames`` list. If absent, synthesize path entries from
+    ``frame_count`` as ``frame_NNNN.json``. Never assumes a fixed count of 2.
+    """
+
+    raw = manifest.get("frames")
+    if isinstance(raw, Sequence) and not isinstance(raw, (str, bytes)):
+        out: list[dict[str, Any]] = []
+        for i, item in enumerate(raw):
+            if not isinstance(item, Mapping):
+                raise TeacherRunnerError(f"manifest.frames[{i}] is not a mapping")
+            frame_index = int(item.get("frame_index", i))
+            path = item.get("path")
+            if path is None:
+                path = f"frame_{frame_index:04d}.json"
+            out.append({"frame_index": frame_index, "path": str(path)})
+        return out
+
+    count = int(manifest.get("frame_count") or 0)
+    if count <= 0:
+        raise TeacherRunnerError(
+            "endpoint manifest has neither frames list nor positive frame_count"
+        )
+    return [
+        {"frame_index": i, "path": f"frame_{i:04d}.json"} for i in range(count)
+    ]
+
+
 @dataclass
 class DryRunTeacherEngine:
-    """Synthetic parent frames for path/layout contracts (not chemistry)."""
+    """Synthetic parent frames for path/layout contracts (not chemistry).
+
+    ``frames_per_endpoint`` is the full evaluation count (variable-length).
+    ``trajectory_stride`` thins intermediate frames for disk (default 1 = keep all).
+    Historical dry-run default remains 2 frames to match legacy fixtures; live
+    engines write whatever length the optimizer yields.
+    """
 
     frames_per_endpoint: int = 2
+    trajectory_stride: int = 1
 
     def run_endpoint(
         self,
@@ -170,22 +232,31 @@ class DryRunTeacherEngine:
     ) -> Mapping[str, Any]:
         if self.frames_per_endpoint <= 0:
             raise TeacherRunnerError("frames_per_endpoint must be positive")
+        keep = select_trajectory_frame_indices(
+            self.frames_per_endpoint, self.trajectory_stride
+        )
         output_dir.mkdir(parents=True, exist_ok=True)
         paths: list[str] = []
+        frames_meta: list[dict[str, Any]] = []
         elements = ("C", "N", "H") if endpoint == "cation" else ("C", "N")
         n_atoms = len(elements)
-        for index in range(self.frames_per_endpoint):
-            coords = [[float(i) + 0.01 * index, 0.0, 0.0] for i in range(n_atoms)]
+        n_written = len(keep)
+        for written_index, source_step in enumerate(keep):
+            coords = [
+                [float(i) + 0.01 * source_step, 0.0, 0.0] for i in range(n_atoms)
+            ]
             # Fake small gradient / energy trajectory (never for real labels)
-            energy = -100.0 - 0.001 * index
-            gradient = [[1.0e-3 * (index + 1), 0.0, 0.0] for _ in range(n_atoms)]
+            energy = -100.0 - 0.001 * source_step
+            gradient = [
+                [1.0e-3 * (source_step + 1), 0.0, 0.0] for _ in range(n_atoms)
+            ]
             frame = {
                 "schema": FRAME_SCHEMA,
                 "dry_run": True,
                 "live_chemistry": False,
                 "root_id": root_id,
                 "endpoint": endpoint,
-                "frame_index": index,
+                "frame_index": written_index,
                 "parent_protocol_id": PROTOCOL_ID,
                 "parent_protocol_sha256": PROTOCOL_SHA256,
                 "functional": FUNCTIONAL,
@@ -197,35 +268,39 @@ class DryRunTeacherEngine:
                 "energy_hartree": energy,
                 "gradient_hartree_per_bohr": gradient,
                 "forces_hartree_per_bohr": [[-g[0], -g[1], -g[2]] for g in gradient],
-                "optimizer_step": index,
-                "is_terminal": index == self.frames_per_endpoint - 1,
+                "optimizer_step": source_step,
+                "is_terminal": written_index == n_written - 1,
                 "lineage": {
                     "mindmap_step": MINDMAP_STEP,
                     "engine": "DryRunTeacherEngine",
                     "single_point_only": False,
                 },
             }
-            path = output_dir / f"frame_{index:04d}.json"
+            rel = f"frame_{written_index:04d}.json"
+            path = output_dir / rel
             write_json(path, frame, overwrite=False)
             paths.append(str(path))
-        manifest = {
+            frames_meta.append({"frame_index": written_index, "path": rel})
+        manifest: dict[str, Any] = {
             "schema": ENDPOINT_MANIFEST_SCHEMA,
             "root_id": root_id,
             "endpoint": endpoint,
-            "frame_count": self.frames_per_endpoint,
+            "frame_count": n_written,
             "complete_geometry_optimization": True,
             "dry_run": True,
             "parent_protocol_sha256": PROTOCOL_SHA256,
-            "frames": [
-                {"frame_index": i, "path": f"frame_{i:04d}.json"}
-                for i in range(self.frames_per_endpoint)
-            ],
+            "trajectory_stride": self.trajectory_stride,
+            "evaluation_count": self.frames_per_endpoint,
+            "frames": frames_meta,
         }
         write_json(output_dir / "manifest.json", manifest, overwrite=False)
         return {
-            "frame_count": self.frames_per_endpoint,
+            "frame_count": n_written,
             "converged": True,
             "frame_paths": paths,
+            "frames": frames_meta,
+            "trajectory_stride": self.trajectory_stride,
+            "evaluation_count": self.frames_per_endpoint,
             "notes": ["dry_run synthetic frames; not scientific labels"],
         }
 
@@ -254,12 +329,41 @@ def run_root_teacher(
                 multiplicity=mult,
                 output_dir=out_dir,
             )
+            # Prefer explicit frames list; fall back to dynamic frame_count / paths.
+            # Never hard-code 2 frames per endpoint (variable-length trajectories).
+            frame_paths = list(result.get("frame_paths") or [])
+            frames_meta = result.get("frames")
+            if isinstance(frames_meta, Sequence) and not isinstance(
+                frames_meta, (str, bytes)
+            ):
+                frame_count = len(frames_meta)
+            else:
+                frame_count = int(result.get("frame_count") or 0)
+                if frame_count <= 0 and frame_paths:
+                    frame_count = len(frame_paths)
+            if frame_paths and frame_count > 0 and len(frame_paths) != frame_count:
+                raise TeacherRunnerError(
+                    f"{root_id}/{endpoint}: frame_paths length "
+                    f"{len(frame_paths)} != frame_count {frame_count}"
+                )
+            # On-disk manifest is authoritative when present (downstream contract).
+            manifest_path = out_dir / "manifest.json"
+            if manifest_path.is_file():
+                disk_manifest, _ = load_json_object(manifest_path)
+                disk_frames = frames_from_endpoint_manifest(disk_manifest)
+                if frame_count > 0 and len(disk_frames) != frame_count:
+                    raise TeacherRunnerError(
+                        f"{root_id}/{endpoint}: manifest frames "
+                        f"{len(disk_frames)} != result frame_count {frame_count}"
+                    )
+                if frame_count <= 0:
+                    frame_count = len(disk_frames)
             ep = EndpointResult(
                 root_id=root_id,
                 endpoint=endpoint,
-                frame_count=int(result.get("frame_count") or 0),
+                frame_count=frame_count,
                 converged=bool(result.get("converged")),
-                frame_paths=list(result.get("frame_paths") or []),
+                frame_paths=frame_paths,
                 dry_run=dry_run,
                 notes=list(result.get("notes") or []),
             )
