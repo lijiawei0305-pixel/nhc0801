@@ -4,8 +4,14 @@ Dry-run default: derive synthetic D3 components from teacher frames and write
 immutable-style receipts under ``generation/d3/``. Never silently recompute on
 read — consumers must load these receipts.
 
-Live PySCF dispersion backend is not wired; ``live=True`` fails closed without
-an injected projector.
+Live path: inject a ``D3Projector`` (typically :class:`Dftd3Projector` via
+simple-dftd3). ``dry_run=False`` without an injected projector fails closed.
+
+**D3(BJ) two-body terms are pure geometry analytic functions.** Any teacher frame
+(including intermediate geomeTRIC evaluations from full-trajectory capture) can
+be projected at **zero DFT cost** — no SCF, no parent energy recompute.
+``d3_recomputation_performed`` stays ``false`` (parent total energy is not
+recomputed; we only evaluate the two-body D3 component from geometry).
 """
 
 from __future__ import annotations
@@ -29,6 +35,30 @@ ENDPOINTS: Final = ("cation", "neutral")
 # Dry-run synthetic two-body D3 scale (not scientific)
 DRY_RUN_D3_FRACTION: Final = 0.01
 
+# Frozen dispersion_identity (must match parent P01 / weighted_dataset target_definition)
+D3_FUNCTIONAL: Final = "wb97m"
+D3_DAMPING: Final = "d3bj"
+D3_ATM: Final = False
+D3_BACKEND_NAME: Final = "simple-dftd3"
+
+# simple-dftd3 Structure positions are Bohr; teacher frames store Angstrom.
+BOHR_TO_ANGSTROM: Final = 0.529177210903
+ANGSTROM_TO_BOHR: Final = 1.0 / BOHR_TO_ANGSTROM
+
+# NHC-relevant Z table (same coverage as weighted_dataset_writer)
+_ATOMIC_NUMBERS: Final = {
+    "H": 1,
+    "B": 5,
+    "C": 6,
+    "N": 7,
+    "O": 8,
+    "F": 9,
+    "Si": 14,
+    "P": 15,
+    "S": 16,
+    "Cl": 17,
+}
+
 
 class D3ProjectionError(RuntimeError):
     """D3 projection failed closed."""
@@ -38,6 +68,20 @@ class D3Projector(Protocol):
     def project_frame(self, frame: Mapping[str, Any]) -> Mapping[str, Any]:
         """Return d3_energy_hartree and d3_gradient_hartree_per_bohr."""
         ...
+
+
+def _dftd3_backend_version() -> str:
+    try:
+        from importlib.metadata import version as pkg_version
+
+        return str(pkg_version("dftd3"))
+    except Exception:
+        try:
+            import dftd3
+
+            return str(getattr(dftd3, "__version__", "unknown"))
+        except Exception:
+            return "unknown"
 
 
 @dataclass
@@ -57,11 +101,90 @@ class DryRunD3Projector:
             "d3_energy_hartree": d3_e,
             "d3_gradient_hartree_per_bohr": d3_g,
             "dispersion_identity": {
-                "atm": False,
-                "damping": "d3bj",
-                "functional": "wb97m",
+                "atm": D3_ATM,
+                "damping": D3_DAMPING,
+                "functional": D3_FUNCTIONAL,
                 "dry_run": True,
             },
+            "d3_two_body_computed_by": "dry_run_synthetic",
+            "d3_backend_version": "n/a",
+        }
+
+
+@dataclass
+class Dftd3Projector:
+    """Live two-body D3(BJ) projector via simple-dftd3 / ``dftd3`` Python API.
+
+    Parameters are pinned to frozen ``dispersion_identity``:
+    ``functional="wb97m"``, ``damping="d3bj"``, ``atm=False``.
+
+    D3(BJ) two-body is a pure geometry analytic function — any frame can be
+    projected at zero DFT cost (no parent SCF / no parent total recompute).
+    """
+
+    functional: str = D3_FUNCTIONAL
+    damping: str = D3_DAMPING
+    atm: bool = D3_ATM
+
+    def project_frame(self, frame: Mapping[str, Any]) -> Mapping[str, Any]:
+        if (
+            self.functional != D3_FUNCTIONAL
+            or self.damping != D3_DAMPING
+            or self.atm is not D3_ATM
+        ):
+            raise D3ProjectionError(
+                "dispersion_identity mismatch: require "
+                f"functional={D3_FUNCTIONAL!r} damping={D3_DAMPING!r} atm={D3_ATM}, "
+                f"got functional={self.functional!r} damping={self.damping!r} "
+                f"atm={self.atm}"
+            )
+        try:
+            import numpy as np
+            from dftd3.interface import DispersionModel, RationalDampingParam
+        except ImportError as exc:
+            raise D3ProjectionError(
+                "simple-dftd3 (package dftd3) is required for live D3 projection"
+            ) from exc
+
+        elements = frame.get("elements")
+        coords = frame.get("coordinates_angstrom")
+        if not isinstance(elements, list) or not elements:
+            raise D3ProjectionError("teacher frame missing elements")
+        if not isinstance(coords, list) or not coords:
+            raise D3ProjectionError("teacher frame missing coordinates_angstrom")
+        if len(elements) != len(coords):
+            raise D3ProjectionError("elements/coordinates length mismatch")
+
+        numbers: list[int] = []
+        for el in elements:
+            z = _ATOMIC_NUMBERS.get(str(el))
+            if z is None:
+                raise D3ProjectionError(f"unsupported element for D3: {el}")
+            numbers.append(z)
+
+        positions_bohr = np.asarray(coords, dtype=float) * ANGSTROM_TO_BOHR
+        numbers_arr = np.asarray(numbers, dtype="i4")
+        # RationalDampingParam == D3(BJ); atm=False keeps two-body only.
+        model = DispersionModel(numbers=numbers_arr, positions=positions_bohr)
+        param = RationalDampingParam(method=self.functional, atm=self.atm)
+        result = model.get_dispersion(param, grad=True)
+
+        energy = float(np.asarray(result["energy"]).reshape(-1)[0])
+        gradient = np.asarray(result["gradient"], dtype=float).reshape(-1, 3)
+        if gradient.shape[0] != len(numbers):
+            raise D3ProjectionError("D3 gradient atom count mismatch")
+
+        return {
+            "d3_energy_hartree": energy,
+            "d3_gradient_hartree_per_bohr": gradient.tolist(),
+            "dispersion_identity": {
+                "atm": self.atm,
+                "damping": self.damping,
+                "functional": self.functional,
+                "dry_run": False,
+            },
+            "d3_two_body_computed_by": D3_BACKEND_NAME,
+            "d3_backend_version": _dftd3_backend_version(),
         }
 
 
@@ -92,6 +215,8 @@ def project_endpoint(
     out_dir = layout.d3_dir / root_id / endpoint
     out_dir.mkdir(parents=True, exist_ok=True)
     receipts: list[dict[str, object]] = []
+    provenance_by: str | None = None
+    provenance_ver: str | None = None
 
     for path in frames:
         payload, raw = load_json_object(path)
@@ -118,13 +243,22 @@ def project_endpoint(
         if not math.isclose(short_e + d3_e, total_e, rel_tol=0.0, abs_tol=1e-12):
             raise D3ProjectionError("energy reconstruction failed")
 
+        computed_by = proj.get("d3_two_body_computed_by")
+        backend_ver = proj.get("d3_backend_version")
+        if provenance_by is None and computed_by is not None:
+            provenance_by = str(computed_by)
+            provenance_ver = str(backend_ver) if backend_ver is not None else None
+
         source_sha = sha256_bytes(raw)
         receipt_body = {
             "schema": D3_RECEIPT_SCHEMA,
             "dry_run": dry_run,
             "live_chemistry": not dry_run,
+            # Parent total energy is never recomputed; only two-body D3 from geometry.
             "d3_recomputation_performed": False,
             "external_d3_required_at_inference": True,
+            "d3_two_body_computed_by": computed_by,
+            "d3_backend_version": backend_ver,
             "candidate": root_id,
             "endpoint": endpoint,
             "frame_index": int(payload["frame_index"]),
@@ -168,6 +302,8 @@ def project_endpoint(
         "frame_count": len(receipts),
         "dry_run": dry_run,
         "d3_recomputation_performed": False,
+        "d3_two_body_computed_by": provenance_by,
+        "d3_backend_version": provenance_ver,
         "receipts": receipts,
     }
     write_json(out_dir / "manifest.json", endpoint_manifest, overwrite=overwrite)
@@ -176,6 +312,8 @@ def project_endpoint(
         "endpoint": endpoint,
         "frame_count": len(receipts),
         "receipts": receipts,
+        "d3_two_body_computed_by": provenance_by,
+        "d3_backend_version": provenance_ver,
     }
 
 
@@ -189,13 +327,16 @@ def run_d3_campaign(
     dry_run: bool = True,
     overwrite: bool = False,
 ) -> dict[str, Any]:
-    """Project all endpoints for listed roots (default pilot train+val)."""
+    """Project all endpoints for listed roots (default pilot train+val).
+
+    Live chemistry (``dry_run=False``) requires an injected projector — typically
+    :class:`Dftd3Projector`. Real dftd3 is not invoked unless that projector runs.
+    """
 
     if not dry_run and projector is None:
-        raise D3ProjectionError("live D3 requires an injected projector (PySCF not wired)")
-    if not dry_run:
         raise D3ProjectionError(
-            "live D3 projection not authorized in this skeleton; use dry_run=True"
+            "live D3 requires an injected projector "
+            "(use Dftd3Projector for simple-dftd3 / dftd3)"
         )
 
     roots = list(
@@ -205,6 +346,8 @@ def run_d3_campaign(
     eng: D3Projector = projector or DryRunD3Projector()
     endpoint_rows: list[dict[str, Any]] = []
     total_frames = 0
+    campaign_by: str | None = None
+    campaign_ver: str | None = None
     for root_id in roots:
         for endpoint in ENDPOINTS:
             row = project_endpoint(
@@ -215,26 +358,44 @@ def run_d3_campaign(
                 dry_run=dry_run,
                 overwrite=overwrite,
             )
+            if campaign_by is None:
+                raw_by = row.get("d3_two_body_computed_by")
+                raw_ver = row.get("d3_backend_version")
+                campaign_by = str(raw_by) if raw_by is not None else None
+                campaign_ver = str(raw_ver) if raw_ver is not None else None
             endpoint_rows.append(row)
             total_frames += int(row["frame_count"])
+
+    if dry_run:
+        status = "DRY_RUN_D3_PASS"
+        notes = [
+            "synthetic D3 for path/contract tests only",
+            "consumers must set d3_recomputation_performed=false",
+        ]
+    else:
+        status = "LIVE_D3_PASS"
+        notes = [
+            "two-body D3(BJ) via injected projector (simple-dftd3 when Dftd3Projector)",
+            "d3_recomputation_performed=false (parent total energy not recomputed)",
+            "D3(BJ) two-body is pure geometry analytic; zero DFT cost per frame",
+        ]
 
     campaign = {
         "schema": D3_CAMPAIGN_SCHEMA,
         "generation_id": layout.generation_id,
         "dry_run": dry_run,
-        "live_chemistry": False,
+        "live_chemistry": not dry_run,
         "d3_recomputation_performed": False,
         "external_d3_required_at_inference": True,
+        "d3_two_body_computed_by": campaign_by,
+        "d3_backend_version": campaign_ver,
         "parent_protocol_sha256": PROTOCOL_SHA256,
         "root_count": len(roots),
         "endpoint_count": len(endpoint_rows),
         "frame_count": total_frames,
         "endpoints": endpoint_rows,
-        "status": "DRY_RUN_D3_PASS",
-        "notes": [
-            "synthetic D3 for path/contract tests only",
-            "consumers must set d3_recomputation_performed=false",
-        ],
+        "status": status,
+        "notes": notes,
     }
     write_json(layout.d3_dir / "campaign_receipt.json", campaign, overwrite=True)
     write_json(layout.logs_dir / "d3_campaign_receipt.json", campaign, overwrite=True)
