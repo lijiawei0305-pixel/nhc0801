@@ -44,6 +44,8 @@
 
 ## 方法总览
 
+从冻结分子与 DFT 参考轨迹，到 AIMNet2 微调、完整几何路线选模，再到密封测试。逐步细节见 [`mindmap.md`](mindmap.md)。
+
 ```mermaid
 flowchart TB
   classDef data fill:#e8f4fc,stroke:#1d6fa5,color:#0b2e4a
@@ -51,26 +53,84 @@ flowchart TB
   classDef gate fill:#fff7ed,stroke:#c2410c,color:#7c2d12
   classDef seal fill:#fef2f2,stroke:#b91c1c,color:#7f1d1d
 
-  A["冻结 root / 划分 Train Val Test"] --> B["DFT 老师轨迹"]
-  B --> C["Train 帧"]
-  B --> D["Val"]
-  B --> E["Test 密封"]
-  D --> F["Epoch-0 基线"]
-  C --> G["微调 AIMNet2"]
-  G --> H["科学 Validation 选模"]
-  F --> H
-  D --> H
-  H --> I["发布 models v0.N"]
-  I --> J["Final Test 一次"]
-  E --> J
+  subgraph P1["1 参考数据"]
+    direction TB
+    A["冻结 molecular root<br/>两端点 · 电荷 · 多重度 · 结构哈希"]
+    B["按 root 划分<br/>Train / Val / Test 互不相交"]
+    C["DFT 完整优化 · 轨迹 · 能量与力"]
+    A --> B --> C
+  end
 
-  class A,B,C,D,E data
-  class F,G model
-  class H,I gate
-  class J seal
+  C --> Train["Train 帧<br/>仅用于训练"]
+  C --> Val["Validation<br/>基线与选模"]
+  C --> Test["Final Test<br/>密封至最后"]
+
+  subgraph P2["2 Epoch-0 基线"]
+    direction TB
+    D["官方 AIMNet2 未微调"]
+    E["GAU_LOOSE → handoff<br/>→ DFT 完整优化 → 标签"]
+    D --> E
+  end
+
+  subgraph P3["3 有监督微调"]
+    direction TB
+    F["仅 Train：拟合短程残差 E/F"]
+    G["多 epoch · 多种子 checkpoint"]
+    H["快速验证：只筛候选<br/>不定终选"]
+    F --> G --> H
+  end
+
+  subgraph P4["4 科学选模"]
+    direction TB
+    I["短名单完整路线<br/>AIMNet2 → handoff → DFT"]
+    J["对照 DFT 参考与 Epoch-0<br/>选定唯一模型"]
+    K["冻结模型 · 划分 · 协议"]
+    I --> J --> K
+  end
+
+  subgraph P5["5 密封 Final Test"]
+    direction TB
+    L["一次性评估 · 考后不改模型"]
+  end
+
+  Val --> D
+  Train --> F
+  Val --> I
+  E --> J
+  H --> I
+  K --> L
+  Test --> L
+
+  class A,B,C,Train,Val,Test data
+  class D,F,G model
+  class E,H,I,J gate
+  class K,L seal
 ```
 
-数据按组 **g00N**（3 Train + 2 Val）：`teacher_gpu_g00N/` · `epoch0_val_batches/g00N/` · `train_g00N/`。进度 [`progress.md`](progress.md)。
+| 阶段 | 要点 |
+| --- | --- |
+| ① 参考数据 | 冻结 root、互不交叉划分、生成 DFT 老师轨迹 |
+| ② Epoch-0 | 未微调模型走完整路线，作微调前对照 |
+| ③ 微调 | 只学 Train；快速验证只筛候选 |
+| ④ 选模 | 完整几何路线比标签，不靠帧 loss 定终选 |
+| ⑤ Final Test | 密封集只考一次 |
+
+**共用几何评估路线**（Epoch-0 / 选模 / Final Test）：
+
+```text
+冻结几何 → AIMNet2（GAU_LOOSE）→ exact-byte handoff
+        → ωB97M-D3(BJ)/def2-TZVPP 完整优化 → 单点与 ΔE_deprot
+```
+
+规模化按 **`g00N`**（每组 5 root = 字典序 3 Train + 2 Val）：
+
+| 工作 | 路径 |
+| --- | --- |
+| 老师帧 | `teacher_gpu_g00N/` |
+| Epoch-0 | `epoch0_val_batches/g00N/` |
+| 训练过程 | `train_g00N/` |
+
+进度见 [`progress.md`](progress.md)。
 
 ---
 
