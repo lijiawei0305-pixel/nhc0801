@@ -1,6 +1,6 @@
 # Phase Status — NHC0801
 
-Updated: 2026-08-03
+Updated: 2026-08-03 (M12 integration acceptance)
 
 **看不懂 g001 / e0 / Val-only？** → 读 **`docs/NHC0801_命名与进度指南.md`**（命名词典 + 查进度命令 + 快照）。
 
@@ -10,11 +10,12 @@ Updated: 2026-08-03
 | P0.1–P0.4 | Complete | Handoff port, dataset reader, numeric cal, orchestrator |
 | P0.5 Sci-Val writer | Complete | `pipeline/scientific_validation.py` (live engines gated) |
 | P1 Freeze roots + split | Partial | Pilot 3+2 + sealed FT |
-| P2 Teacher Pure-PySCF | Pilot bound | 235-frame weighted pilot reused under g001 |
+| P2 Teacher Pure-PySCF | **Eng ready + pilot bound** | Full-trajectory callback (M1–M3) **code-complete**; historical `frame_count==2` endpoints **read-only**; live P-1v still M13 |
 | P3 Epoch-0 baseline | **LIVE RUNNING** | Parent P01 `wb97m-d3bj`; **must audit receipts on finish** |
-| P4 AIMNet2 training | **LIVE_TRAIN_PASS** | 3 seeds × 200 ep; `.pt` under `g001/train/seed_*` |
-| P5 Sci Validation / select | **Dry-run ready** | shortlist campaign + sci_val dry; live gated |
+| P4 AIMNet2 training | **LIVE_TRAIN_PASS + recipe eng** | Pilot 3×200 under legacy paths; new writes `train_g00N/runs/<run_id>/` (M5/M7/M8); defaults batch=8/epochs=120/EMA |
+| P5 Sci Validation / select | **Dry-run ready + pre_screen** | shortlist + sci_val dry; **zero-DFT pre_screen** (M10) eng ready; live gated |
 | P6 Freeze + Final Test | **PROVISIONAL freeze** | `freeze_manifest`; Final Test still sealed |
+| M12 E2E dry-run | **PASS** | `tests/test_m12_e2e_dry_run.py`: teacher→D3→weighted→train→shortlist→pre_screen |
 
 ## Live dual-path (2026-08-02)
 
@@ -94,30 +95,33 @@ teacher DFT / epoch-0 / AIMNet2 train / sci-val **live** / Final Test / write ou
 | CLI | `scripts/nhc0801_init_generation.py`, `nhc0801_resource_claim_eval.py` |
 | Live chemistry | **still closed** |
 
-## Teacher runner (mindmap 2)
+## Teacher runner (mindmap 2) — full trajectory eng (M1–M3)
 
 | Item | Status |
 | --- | --- |
-| Module | `pipeline/teacher_runner.py` |
+| Module | `pipeline/teacher_runner.py` + `live_teacher` + parent worker |
 | CLI | `scripts/nhc0801_teacher_runner.py` |
-| Mode | **dry-run default** → synthetic frames + receipts under `teacher_gpu_g001/` |
+| Mode | **dry-run default** → synthetic frames under `teacher_gpu_g001/` |
+| Variable frames | manifest-driven; no hard-coded 2; optional `trajectory_stride` |
+| Full trajectory | worker `trajectory_out_path` (opt-in, **default-compatible**); JSONL all evaluations |
 | Pool | `worker_pool` root claims; cation→neutral per root |
-| Live | Closed (`teacher_pyscf_authorized` + non-dry engine required) |
+| Live full-traj verify | **not done** (M13 P-1v); historical `frame_count==2` **read-only** |
 
 ```bash
 PYTHONPATH=src python scripts/nhc0801_teacher_runner.py --plan-only
 PYTHONPATH=src python scripts/nhc0801_teacher_runner.py --frames-per-endpoint 2
 ```
 
-## D3 + weighted dataset (mindmap residual path, dry-run)
+## D3 + weighted dataset (mindmap residual path, dry-run / inject)
 
 | Item | Status |
 | --- | --- |
 | D3 module | `pipeline/d3_projection.py` → `g001/d3/` |
+| Live wiring | `Dftd3Projector` inject; fail-closed if live + no projector (M4) |
 | Weighted writer | `pipeline/weighted_dataset_writer.py` → `g001/datasets/weighted/` |
 | CLI chain | `scripts/nhc0801_d3_weighted_dry_run.py` |
 | Audit | reuses `data/weighted_dataset.audit_weighted_dataset` |
-| Live D3/PySCF | **closed** |
+| Live D3/PySCF | **not claimed as complete** without server run |
 
 ```bash
 PYTHONPATH=src python scripts/nhc0801_d3_weighted_dry_run.py \
@@ -133,7 +137,7 @@ PYTHONPATH=src python scripts/nhc0801_d3_weighted_dry_run.py \
 | Scope | Validation roots only (pilot 2) |
 | Routes | Pure-PySCF reference **and** official `_0` AIMNet2 → GAU_LOOSE → handoff → parent GAU |
 | Weight identity | `OFFICIAL_AIMNET2_WEIGHT_SHA256` (`aimnet2_wb97m_d3_0`) |
-| Live | Closed (`epoch0_execution` + non-simulated engines) |
+| Live | In progress on server; dry-run always available |
 
 ```bash
 PYTHONPATH=src python scripts/nhc0801_epoch0_dry_run.py --plan-only
@@ -141,21 +145,53 @@ PYTHONPATH=src python scripts/nhc0801_epoch0_dry_run.py \
   --nhc0801-root runs/local_nhc0801
 ```
 
-## Multi-seed trainer (mindmap 4–5, dry-run)
+## Multi-seed trainer (mindmap 4–5) — recipe layout (M5/M7/M8)
 
 | Item | Status |
 | --- | --- |
-| Config | `training/config.py` (seeds/epochs/lr frozen defaults) |
-| Loop | `training/multi_seed_trainer.py` |
-| CLI | `scripts/nhc0801_train_dry_run.py` |
-| Data | reads `g001/datasets/weighted` |
+| Config | `training/config.py`: `run_id`, `ema_decay=0.99`, `batch_size=8`, `epochs=120` |
+| Loop | `training/multi_seed_trainer.py` → `train_g00N/runs/<run_id>/seed_*/` |
+| Live backend | `training/live_aimnet2.py` multi-regex + EMA + digest (M7) |
+| CLI | `scripts/nhc0801_train_dry_run.py`, `nhc0801_train_ablation.py` (M11) |
+| Data | reads weighted dataset; audit before train |
 | Policy | quick-val **never** final select; retain all seed/epoch outcomes |
-| Live | Closed (`aimnet2_train_authorized` + non-dry backend) |
+| Live ablation | **not run** (M14); pilot LIVE_TRAIN_PASS is legacy path evidence |
 
 ```bash
 PYTHONPATH=src python scripts/nhc0801_train_dry_run.py \
   --nhc0801-root runs/local_nhc0801 --bootstrap-data --epochs 5
 ```
+
+## Zero-DFT pre_screen (mindmap 7 strengthened, M10)
+
+| Item | Status |
+| --- | --- |
+| Module | `pipeline/pre_screen.py` |
+| Path | `pre_screen_g00N/<run_id>/screen_campaign.json` |
+| Rank | hard gates → RMSD ↑ → steps ↑ → force RMSE ↑ (**no energy loss**) |
+| Receipt | `final_model_selected: false`; `selection_authority: pre_screen_shortlist_only_not_final` |
+| CLI | `scripts/nhc0801_pre_screen.py` |
+| Live | Eng ready; needs real checkpoints + AIMNet2 relaxer (M14) |
+
+```bash
+PYTHONPATH=src python scripts/nhc0801_pre_screen.py --help
+```
+
+## M12 integration dry-run (local, 2026-08-03)
+
+| Step | Status |
+| --- | --- |
+| teacher dry-run (4 frames/endpoint) | PASS |
+| D3 + injected `DryRunD3Projector` | PASS |
+| weighted dataset audit | PASS |
+| train dry-run under `runs/<run_id>/` | PASS |
+| shortlist (`train_dir` = run dir) | PASS |
+| pre_screen dry-run | PASS |
+| pytest / mypy / ruff | **green** (see gate) |
+
+Test: `tests/test_m12_e2e_dry_run.py`
+
+**Honest limits:** no live DFT, no real AIMNet2 weights, no server deploy (M13), no ablation live (M14). Full-trajectory capture on the running teacher daemons is **not** yet verified live.
 
 ## Ops 2026-08-02
 
@@ -172,7 +208,7 @@ PYTHONPATH=src python scripts/nhc0801_train_dry_run.py \
 | Probe | `resources/host_sampler.py` (local or SSH BatchMode) |
 | Orchestration | `resources/claim_runner.py` → `g001/resources/claim_*.json` |
 | CLI | `scripts/nhc0801_resource_claim.py` |
-| Chemistry | **never started**; PASS ≠ open teacher/epoch0/train gates |
+| Chemistry | **never started by claim alone**; PASS ≠ open teacher/epoch0/train gates |
 
 ```bash
 # Remote two-sample claim (uses configs/server.local.yaml ssh_alias)
@@ -184,5 +220,6 @@ PYTHONPATH=src python scripts/nhc0801_resource_claim.py --mode local
 
 ## Next unique engineering step
 
-科学顺序 live：claim PASS → 授权 teacher → 真 D3 → epoch-0 → train。  
-工程可选：PySCF/AIMNet2 live 引擎接线，或端到端 dry-run 编排脚本。
+**M13**: rsync → NHC0801 (no `--delete`) → 1 endpoint live trajectory verify (`trajectory_frame_count > 2`).  
+**M14**: GPU claim → 4-recipe ablation × pre_screen; rank by force/RMSD/steps (**not** val loss / T1).  
+Do **not** treat M12 dry-run as live chemistry complete.
