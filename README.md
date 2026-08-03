@@ -8,8 +8,6 @@
 
 本项目在 **ωB97M-D3(BJ)/def2-TZVPP** 参考轨迹上微调 **AIMNet2**：用 PySCF 生成老师帧（几何、能量、力），只在 Train 上做有监督训练，再经完整科学 Validation 选出唯一 checkpoint，最后在密封的 **Final Test** 上只评估一次。
 
-科学步骤 0–12 见 **`mindmap.md`**（方框 + 箭头）；协作与实现细节见 **`AGENTS.md`**。
-
 ---
 
 ## 反应与标签
@@ -36,18 +34,17 @@
 
 ---
 
-## 参考方法与 GAU_LOOSE
+## 电子结构方法与几何收敛
 
-老师帧，以及 handoff 之后的完整优化，都固定为 **ωB97M-D3(BJ)/def2-TZVPP**（气相闭壳层 RKS，PySCF + geomeTRIC）：
+老师轨迹，以及 handoff 后的完整优化，均在 **ωB97M-D3(BJ)/def2-TZVPP** 下完成（气相闭壳层 RKS；PySCF + geomeTRIC）：
 
 | 项 | 设定 |
 | --- | --- |
 | 泛函 / 基组 | ωB97M-D3(BJ) / def2-TZVPP |
-| 格点 | grid = 4 |
-| SCF | `1e-9` |
-| 协议 SHA256 | `227c22a527e567bc4de873ab743fe9f493779eccbb1a698d2913c87695ebf87a` |
+| 积分格点 | grid level 4 |
+| SCF 收敛 | $10^{-9}$ |
 
-AIMNet2 在自身势能面上的收敛合同是 **GAU_LOOSE**（`docs/contracts/GAU_LOOSE_V001.yaml`）。须**同时**满足 geomeTRIC 的五条准则，并配合 ASE LBFGS 的步数与力上限：
+AIMNet2 在自身势能面上优化时，采用 geomeTRIC 的 **GAU_LOOSE** 收敛阈值（五条同时满足），并配合 ASE LBFGS：
 
 | 准则 | 阈值 |
 | --- | --- |
@@ -56,24 +53,24 @@ AIMNet2 在自身势能面上的收敛合同是 **GAU_LOOSE**（`docs/contracts/
 | 梯度最大值 | $\le 2.5 \times 10^{-3}$ Eh/Bohr |
 | 位移 RMS | $\le 6.7 \times 10^{-3}$ Å |
 | 位移最大值 | $\le 1.0 \times 10^{-2}$ Å |
-| ASE LBFGS | `fmax = 0.10` eV/Å，`max_steps = 100` |
+| ASE LBFGS | `fmax = 0.10` eV/Å，最多 100 步 |
 
-收敛后检查电荷、多重度、质子身份与拓扑等合法性，再做 **exact-byte handoff**，交给同一参考级别做完整几何优化与最终单点（不是只做单点）。
+收敛后检查电荷、多重度、质子身份与拓扑，再将几何 **按字节原样** 交给同一 DFT 级别做完整优化与最终单点（不是只做单点）。
 
-Epoch-0、科学 Validation 与 Final Test 共用同一条骨架：
+Epoch-0、科学 Validation 与 Final Test 共用：
 
 ```text
 冻结几何
-  → AIMNet2 优化到 GAU_LOOSE
+  → AIMNet2 优化至 GAU_LOOSE
   → 身份 / 拓扑检查
-  → exact-byte handoff
-  → ωB97M-D3(BJ)/def2-TZVPP 完整优化至收敛
+  → 几何 handoff
+  → ωB97M-D3(BJ)/def2-TZVPP 完整优化
   → 最终单点与脱质子标签
 ```
 
-再与 **DFT 参考路线**（直接在 ωB97M-D3(BJ)/def2-TZVPP 上完整优化得到的老师参考）对照。
+对照路线为：直接在同一 DFT 级别上完整优化得到的参考轨迹与标签。
 
-训练学的是冻结两体 D3(BJ) 后的短程残差；推理时加回同一外部 D3：
+训练目标是扣除冻结两体 D3(BJ) 后的短程残差；推理时加回同一外部 D3：
 
 ```math
 E_{\mathrm{short}} = E_{\mathrm{DFT,total}} - E_{\mathrm{D3}}, \quad
@@ -81,7 +78,6 @@ E_{\mathrm{short}} = E_{\mathrm{DFT,total}} - E_{\mathrm{D3}}, \quad
 ```
 
 其中 $E_{\mathrm{DFT,total}}$ / $\mathbf{F}_{\mathrm{DFT,total}}$ 为 ωB97M-D3(BJ)/def2-TZVPP 总能量与力。
-
 ---
 
 ## 方法总览
