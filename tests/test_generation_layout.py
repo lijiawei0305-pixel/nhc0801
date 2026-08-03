@@ -10,12 +10,17 @@ from nhc_deprot.data.paths import TRAIN_ROOTS, VALIDATION_ROOTS
 from nhc_deprot.generation.layout import (
     DEFAULT_GENERATION_ID,
     GenerationError,
+    default_model_version_for_train_batch,
     init_generation,
     load_generation_meta,
     normalize_model_version,
     resolve_layout,
 )
-from nhc_deprot.training.model_versions import list_model_versions, register_model_version
+from nhc_deprot.training.model_versions import (
+    ModelVersionError,
+    list_model_versions,
+    register_model_version,
+)
 
 
 def test_init_generation_tree(tmp_path: Path) -> None:
@@ -82,6 +87,10 @@ def test_model_version_paths_and_register(tmp_path: Path) -> None:
     layout, _, _ = init_generation(nhc0801_root=tmp_path / "NHC0801")
     assert normalize_model_version("0.1") == "v0.1"
     assert normalize_model_version("v0.2") == "v0.2"
+    # fixed order: train_g00N → v0.N
+    assert default_model_version_for_train_batch("g001") == "v0.1"
+    assert default_model_version_for_train_batch("g002") == "v0.2"
+    assert default_model_version_for_train_batch("g010") == "v0.10"
     with pytest.raises(GenerationError):
         normalize_model_version("aimnet2_finetuned_best")
 
@@ -92,9 +101,9 @@ def test_model_version_paths_and_register(tmp_path: Path) -> None:
 
     src = tmp_path / "src.pt"
     src.write_bytes(b"fake-weights")
+    # omit version → default from train_batch_id (g001 → v0.1)
     info = register_model_version(
         layout=layout,
-        version="0.1",
         source_weight=src,
         train_batch_id="g001",
         seed=20260730,
@@ -106,3 +115,13 @@ def test_model_version_paths_and_register(tmp_path: Path) -> None:
     assert layout.model_weight_path("v0.1").is_file()
     assert layout.model_weight_path("v0.1").read_bytes() == b"fake-weights"
     assert list_model_versions(layout) == ["v0.1"]
+
+    # g001 must not publish as v0.2
+    with pytest.raises(ModelVersionError, match="v0.1"):
+        register_model_version(
+            layout=layout,
+            version="v0.2",
+            source_weight=src,
+            train_batch_id="g001",
+            overwrite=True,
+        )

@@ -102,9 +102,20 @@ models/
 | 训练过程 | 某个 seed、某轮 epoch 的草稿权重 | `train_g001/seed_…/epoch_0200.pt` |
 | **发布版本** | 对外/对下游使用的正式模型 | **`models/v0.1/model.pt`** |
 
+### 训练组 → 发布版本（固定顺序 · 必记）
+
+| 训练过程 | 发布版本 | 磁盘 |
+| --- | --- | --- |
+| **`train_g001/`** | **v0.1** | `models/v0.1/model.pt` |
+| **`train_g002/`** | **v0.2** | `models/v0.2/model.pt` |
+| **`train_g00N/`** | **v0.N** | `models/v0.N/model.pt` |
+
+- g001 训完 → 发 **v0.1**；g002 训完 → 发 **v0.2**；依此类推（N = 组号）。  
+- **禁止** g001 发成 v0.2，或 g002 发成 v0.1。  
+- 代码：`default_model_version_for_train_batch("g001") == "v0.1"`；`register_model_version` 默认按此校验。
+
 对人只说 **v0.1**，不要说一长串英文文件名。  
 `info.json` 里记下：来自哪个 `train_g00N` / seed / epoch、权重 sha256。
-
 **训练过程目录（`train_g00N/`）：**
 
 ```text

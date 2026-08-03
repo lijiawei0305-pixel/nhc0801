@@ -238,6 +238,29 @@ def normalize_model_version(version: str) -> str:
     return f"v{major}.{minor}"
 
 
+def default_model_version_for_train_batch(batch_id: str) -> str:
+    """Map train group to default release version (project order).
+
+    **Fixed order (do not invent aliases):**
+
+    - ``train_g001`` → **v0.1**
+    - ``train_g002`` → **v0.2**
+    - ``train_g00N`` → **v0.N**  (N = group index, no leading zeros in the minor)
+
+    Example: g010 → v0.10.
+    """
+    bid = _normalize_batch_id(batch_id)
+    if not bid.startswith("g") or len(bid) < 2:
+        raise GenerationError(f"cannot map batch_id to model version: {batch_id!r}")
+    digits = bid[1:]
+    if not digits.isdigit():
+        raise GenerationError(f"cannot map batch_id to model version: {batch_id!r}")
+    n = int(digits)
+    if n < 1:
+        raise GenerationError(f"batch index must be >= 1, got {batch_id!r}")
+    return f"v0.{n}"
+
+
 @dataclass
 class GenerationMeta:
     schema: str = GENERATION_SCHEMA
