@@ -1,9 +1,4 @@
-"""Per-release model feature card (JSON + SVG) for models/v0.N/.
-
-Each published fine-tune must ship a short visual card of key traits.
-Metrics combine standard MLFF practice (E/F errors) with NHC0801 scientific
-route outcomes (label error, handoff, vs Epoch-0 cost) — not only frame loss.
-"""
+"""Per-release model card: card.json + chart-style card.svg under models/v0.N/."""
 
 from __future__ import annotations
 
@@ -20,210 +15,210 @@ CARD_JSON: Final = "card.json"
 CARD_SVG: Final = "card.svg"
 CARD_SCHEMA: Final = "nhc0801-model-card-v1"
 
-# Feature groups shown on the card (research MLFF + this project)
-FEATURE_GROUPS: Final = (
-    ("identity", "Identity"),
-    ("chemistry", "Chemistry & reference"),
-    ("training", "Training"),
-    ("frame_metrics", "Frame metrics (screening)"),
-    ("sci_metrics", "Scientific route (selection)"),
-    ("provenance", "Provenance"),
-)
-
 
 @dataclass
 class ModelCardFeatures:
-    """Fields for one release card. Missing numerics stay None → shown as —."""
+    """Metrics for one release chart. None → bar omitted or dashed."""
 
-    # Identity
     version: str = "v0.1"
     human_title: str = "AIMNet2 NHC"
     base_model: str = "aimnet2_wb97m_d3_0"
     weight_file: str = "models/v0.1/model.pt"
-
-    # Chemistry & reference DFT
     reaction: str = "NHC-H+ → NHC + H+"
     reference_dft: str = "ωB97M-D3(BJ)/def2-TZVPP"
     train_target: str = "short-range residual E/F (frozen D3)"
-    label_rule: str = "DFT labels only (AIMNet2 energy not in ΔE_deprot)"
-
-    # Training scope
+    label_rule: str = "DFT labels only"
     train_batch_id: str = "g001"
     train_roots: int | None = None
     train_frames: int | None = None
     seed: int | None = None
     epoch: int | None = None
-    selection: str = "scientific validation (not quick-val)"
-
-    # Frame-level (quick-val / MLFF standard) — screening only
-    energy_mae: float | None = None  # e.g. kcal/mol or meV — unit in energy_unit
+    selection: str = "scientific validation"
+    energy_mae: float | None = None
     energy_rmse: float | None = None
     energy_unit: str = "kcal/mol"
     force_mae: float | None = None
     force_rmse: float | None = None
     force_unit: str = "eV/Å"
-
-    # Scientific route (project core)
-    deprot_label_mae: float | None = None  # |ΔE_deprot model−route − DFT ref|
+    deprot_label_mae: float | None = None
     deprot_label_unit: str = "kcal/mol"
-    vs_epoch0_opt_steps_ratio: float | None = None  # <1 means fewer parent steps
+    vs_epoch0_opt_steps_ratio: float | None = None
     vs_epoch0_wall_ratio: float | None = None
-    handoff_pass_rate: float | None = None  # 0–1
-    topology_pass_rate: float | None = None  # 0–1
+    handoff_pass_rate: float | None = None
+    topology_pass_rate: float | None = None
     n_val_roots_eval: int | None = None
-
-    # Provenance
-    weight_sha256_short: str | None = None  # first 12 hex
+    weight_sha256_short: str | None = None
     notes: list[str] = field(default_factory=list)
 
     def as_dict(self) -> dict[str, Any]:
         d = asdict(self)
         d["schema"] = CARD_SCHEMA
-        d["feature_groups"] = [list(g) for g in FEATURE_GROUPS]
         return d
 
 
-def _fmt(v: Any, digits: int = 3) -> str:
-    if v is None:
-        return "—"
-    if isinstance(v, float):
-        if 0 <= v <= 1 and digits >= 2:
-            # rates often 0–1
-            return f"{v:.2%}" if v <= 1.0 and "rate" not in str(type(v)) else f"{v:.{digits}g}"
-        return f"{v:.{digits}g}"
-    return str(v)
+def _esc(s: str) -> str:
+    return html.escape(s, quote=True)
 
 
-def _fmt_rate(v: float | None) -> str:
-    if v is None:
-        return "—"
-    return f"{100.0 * float(v):.1f}%"
+def _bar_row(
+    *,
+    y: float,
+    label: str,
+    value_text: str,
+    frac: float | None,
+    color: str,
+    track_w: float = 420,
+    x0: float = 200,
+) -> list[str]:
+    """One horizontal bar; frac in [0,1] fills the track. None → empty track + em dash."""
+    parts = [
+        f'<text x="40" y="{y + 14}" fill="#334155" font-size="13" '
+        f'font-family="system-ui,sans-serif">{_esc(label)}</text>',
+        f'<rect x="{x0}" y="{y}" width="{track_w}" height="18" rx="4" fill="#e2e8f0"/>',
+    ]
+    if frac is not None and frac >= 0:
+        w = max(2.0, min(1.0, float(frac)) * track_w)
+        parts.append(
+            f'<rect x="{x0}" y="{y}" width="{w:.1f}" height="18" rx="4" fill="{color}"/>'
+        )
+    parts.append(
+        f'<text x="{x0 + track_w + 12}" y="{y + 14}" fill="#0f172a" font-size="13" '
+        f'font-family="ui-monospace,monospace">{_esc(value_text)}</text>'
+    )
+    return parts
 
 
-def _fmt_ratio(v: float | None) -> str:
-    if v is None:
-        return "—"
-    return f"{float(v):.2f}× vs e0"
+def _norm_error(val: float | None, scale: float) -> float | None:
+    """Map error to bar length: smaller error → longer green bar (quality)."""
+    if val is None or scale <= 0:
+        return None
+    # quality = max(0, 1 - val/scale)
+    return max(0.0, min(1.0, 1.0 - float(val) / scale))
 
 
-def build_card_rows(feat: ModelCardFeatures) -> list[tuple[str, list[tuple[str, str]]]]:
-    """Grouped (section_title, [(label, value), ...]) for rendering."""
-    return [
+def _norm_ratio(val: float | None) -> float | None:
+    """vs epoch0: ratio 1.0 = same; lower is better → quality bar."""
+    if val is None:
+        return None
+    # 0.5× cost → quality 1.0; 1.0× → 0.5; 1.5× → 0
+    return max(0.0, min(1.0, 1.5 - float(val)))
+
+
+def render_model_card_svg(feat: ModelCardFeatures, *, width: int = 760) -> str:
+    """Clean release chart: identity strip + horizontal bars (not a wall of text)."""
+    # Layout
+    header_h = 88
+    pad = 28
+    row_h = 32
+    # sections of bars
+    error_items: list[tuple[str, str, float | None, str]] = [
         (
-            "Identity",
-            [
-                ("Version", feat.version),
-                ("Title", feat.human_title),
-                ("Base", feat.base_model),
-                ("File", feat.weight_file),
-            ],
+            f"Energy MAE ({feat.energy_unit})",
+            "—" if feat.energy_mae is None else f"{feat.energy_mae:.3g}",
+            _norm_error(feat.energy_mae, scale=3.0),
+            "#0ea5e9",
         ),
         (
-            "Chemistry & reference",
-            [
-                ("Reaction", feat.reaction),
-                ("DFT", feat.reference_dft),
-                ("Learn", feat.train_target),
-                ("Labels", feat.label_rule),
-            ],
+            f"Force MAE ({feat.force_unit})",
+            "—" if feat.force_mae is None else f"{feat.force_mae:.3g}",
+            _norm_error(feat.force_mae, scale=0.15),
+            "#0ea5e9",
         ),
         (
-            "Training",
-            [
-                ("From train", feat.train_batch_id),
-                ("Roots / frames", f"{_fmt(feat.train_roots)} / {_fmt(feat.train_frames)}"),
-                ("Seed / epoch", f"{_fmt(feat.seed)} / {_fmt(feat.epoch)}"),
-                ("Selected by", feat.selection),
-            ],
+            f"ΔE_deprot MAE ({feat.deprot_label_unit})",
+            "—" if feat.deprot_label_mae is None else f"{feat.deprot_label_mae:.3g}",
+            _norm_error(feat.deprot_label_mae, scale=5.0),
+            "#8b5cf6",
+        ),
+    ]
+    rate_items: list[tuple[str, str, float | None, str]] = [
+        (
+            "Handoff pass",
+            "—" if feat.handoff_pass_rate is None else f"{100 * feat.handoff_pass_rate:.0f}%",
+            feat.handoff_pass_rate,
+            "#10b981",
         ),
         (
-            "Frame metrics (screening only)",
-            [
-                (f"E MAE ({feat.energy_unit})", _fmt(feat.energy_mae)),
-                (f"E RMSE ({feat.energy_unit})", _fmt(feat.energy_rmse)),
-                (f"F MAE ({feat.force_unit})", _fmt(feat.force_mae)),
-                (f"F RMSE ({feat.force_unit})", _fmt(feat.force_rmse)),
-            ],
+            "Topology pass",
+            "—" if feat.topology_pass_rate is None else f"{100 * feat.topology_pass_rate:.0f}%",
+            feat.topology_pass_rate,
+            "#10b981",
+        ),
+    ]
+    cost_items: list[tuple[str, str, float | None, str]] = [
+        (
+            "Parent steps vs e0",
+            "—" if feat.vs_epoch0_opt_steps_ratio is None else f"{feat.vs_epoch0_opt_steps_ratio:.2f}×",
+            _norm_ratio(feat.vs_epoch0_opt_steps_ratio),
+            "#f59e0b",
         ),
         (
-            "Scientific route (selection)",
-            [
-                (f"ΔE_deprot MAE ({feat.deprot_label_unit})", _fmt(feat.deprot_label_mae)),
-                ("Parent steps vs e0", _fmt_ratio(feat.vs_epoch0_opt_steps_ratio)),
-                ("Wall time vs e0", _fmt_ratio(feat.vs_epoch0_wall_ratio)),
-                ("Handoff pass", _fmt_rate(feat.handoff_pass_rate)),
-                ("Topology pass", _fmt_rate(feat.topology_pass_rate)),
-                ("Val roots eval", _fmt(feat.n_val_roots_eval)),
-            ],
-        ),
-        (
-            "Provenance",
-            [
-                ("SHA256", feat.weight_sha256_short or "—"),
-                ("Notes", "; ".join(feat.notes) if feat.notes else "—"),
-            ],
+            "Wall time vs e0",
+            "—" if feat.vs_epoch0_wall_ratio is None else f"{feat.vs_epoch0_wall_ratio:.2f}×",
+            _norm_ratio(feat.vs_epoch0_wall_ratio),
+            "#f59e0b",
         ),
     ]
 
+    n_rows = len(error_items) + len(rate_items) + len(cost_items) + 3  # section titles
+    chart_h = n_rows * row_h + 40
+    height = header_h + chart_h + 56
 
-def render_model_card_svg(feat: ModelCardFeatures, *, width: int = 900) -> str:
-    """Self-contained SVG release card (no extra Python deps)."""
-    rows_grouped = build_card_rows(feat)
-    pad = 24
-    y = pad + 8
-    line_h = 22
-    section_gap = 14
-    col1_x = pad + 8
-    col2_x = 280
-    content_lines = 0
-    for _, pairs in rows_grouped:
-        content_lines += 1 + len(pairs)
-    height = pad * 2 + 70 + content_lines * line_h + section_gap * len(rows_grouped) + 20
-
-    def esc(s: str) -> str:
-        return html.escape(s, quote=True)
+    meta = (
+        f"{feat.train_batch_id} → {feat.version}  ·  {feat.reference_dft}  ·  "
+        f"seed {feat.seed if feat.seed is not None else '—'}  "
+        f"epoch {feat.epoch if feat.epoch is not None else '—'}"
+    )
 
     parts: list[str] = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
         f'viewBox="0 0 {width} {height}">',
-        f'<rect width="100%" height="100%" fill="#0f172a"/>',
-        f'<rect x="12" y="12" width="{width - 24}" height="{height - 24}" rx="16" '
-        f'fill="#1e293b" stroke="#38bdf8" stroke-width="2"/>',
-        f'<text x="{pad + 8}" y="{y + 28}" fill="#f8fafc" font-size="26" '
-        f'font-family="ui-sans-serif, system-ui, sans-serif" font-weight="700">'
-        f"{esc(feat.human_title)}  {esc(feat.version)}</text>",
-        f'<text x="{pad + 8}" y="{y + 52}" fill="#94a3b8" font-size="13" '
-        f'font-family="ui-sans-serif, system-ui, sans-serif">'
-        f"NHC deprotonation · fine-tuned AIMNet2 · release card</text>",
+        # white card
+        f'<rect width="100%" height="100%" fill="#f8fafc"/>',
+        f'<rect x="16" y="16" width="{width - 32}" height="{height - 32}" rx="12" '
+        f'fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>',
+        # accent bar
+        f'<rect x="16" y="16" width="8" height="{height - 32}" rx="2" fill="#0ea5e9"/>',
+        # title
+        f'<text x="{pad + 12}" y="52" fill="#0f172a" font-size="24" font-weight="700" '
+        f'font-family="system-ui,sans-serif">{_esc(feat.human_title)}  {_esc(feat.version)}</text>',
+        f'<text x="{pad + 12}" y="76" fill="#64748b" font-size="13" '
+        f'font-family="system-ui,sans-serif">{_esc(meta)}</text>',
+        f'<text x="{pad + 12}" y="96" fill="#94a3b8" font-size="12" '
+        f'font-family="system-ui,sans-serif">{_esc(feat.reaction)}  ·  {_esc(feat.weight_file)}</text>',
     ]
-    y += 70
 
-    for section, pairs in rows_grouped:
+    y = header_h + 24
+
+    def section(title: str) -> None:
+        nonlocal y
         parts.append(
-            f'<text x="{col1_x}" y="{y}" fill="#38bdf8" font-size="14" '
-            f'font-family="ui-sans-serif, system-ui, sans-serif" font-weight="600">'
-            f"{esc(section)}</text>"
+            f'<text x="{pad + 12}" y="{y}" fill="#64748b" font-size="11" '
+            f'font-family="system-ui,sans-serif" font-weight="600" '
+            f'letter-spacing="0.06em">{_esc(title.upper())}</text>'
         )
-        y += line_h
-        for label, value in pairs:
-            parts.append(
-                f'<text x="{col1_x}" y="{y}" fill="#94a3b8" font-size="13" '
-                f'font-family="ui-sans-serif, system-ui, sans-serif">{esc(label)}</text>'
-            )
-            # truncate long values for layout
-            v = value if len(value) <= 72 else value[:69] + "..."
-            parts.append(
-                f'<text x="{col2_x}" y="{y}" fill="#e2e8f0" font-size="13" '
-                f'font-family="ui-monospace, monospace">{esc(v)}</text>'
-            )
-            y += line_h
-        y += section_gap
+        y += 22
 
+    section("Errors  (longer bar = better)")
+    for label, vtxt, frac, color in error_items:
+        parts.extend(_bar_row(y=y, label=label, value_text=vtxt, frac=frac, color=color))
+        y += row_h
+
+    section("Route reliability")
+    for label, vtxt, frac, color in rate_items:
+        parts.extend(_bar_row(y=y, label=label, value_text=vtxt, frac=frac, color=color))
+        y += row_h
+
+    section("Cost vs Epoch-0  (longer = cheaper than e0)")
+    for label, vtxt, frac, color in cost_items:
+        parts.extend(_bar_row(y=y, label=label, value_text=vtxt, frac=frac, color=color))
+        y += row_h
+
+    sha = feat.weight_sha256_short or "—"
     parts.append(
-        f'<text x="{pad + 8}" y="{height - 18}" fill="#64748b" font-size="11" '
-        f'font-family="ui-sans-serif, system-ui, sans-serif">'
-        f"Frame metrics do not select the model · Scientific route decides · "
-        f"train_g00N → v0.N</text>"
+        f'<text x="{pad + 12}" y="{height - 28}" fill="#94a3b8" font-size="11" '
+        f'font-family="ui-monospace,monospace">sha { _esc(sha) }  ·  '
+        f"select: {_esc(feat.selection)}</text>"
     )
     parts.append("</svg>")
     return "\n".join(parts)
@@ -235,7 +230,6 @@ def write_model_card(
     *,
     overwrite: bool = True,
 ) -> dict[str, str]:
-    """Write models/vX.Y/card.json + card.svg."""
     ver = normalize_model_version(feat.version)
     feat.version = ver
     feat.weight_file = f"models/{ver}/model.pt"
@@ -255,7 +249,6 @@ def card_features_from_info(
     *,
     extras: dict[str, Any] | None = None,
 ) -> ModelCardFeatures:
-    """Build card fields from model info.json + optional metrics dict."""
     extras = extras or {}
     sha = info.get("weight_sha256")
     short = (str(sha)[:12] + "…") if sha else extras.get("weight_sha256_short")

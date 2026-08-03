@@ -52,6 +52,7 @@ def main() -> int:
         info = json.loads(args.from_info.read_text(encoding="utf-8"))
         feat = card_features_from_info(info, extras=metrics)
     elif args.demo:
+        # Illustrative numbers so bars render; replace on real release
         feat = ModelCardFeatures(
             version=args.version,
             train_batch_id="g001",
@@ -69,8 +70,8 @@ def main() -> int:
             handoff_pass_rate=1.0,
             topology_pass_rate=1.0,
             n_val_roots_eval=2,
-            weight_sha256_short="demo00000000…",
-            notes=["demo card only — not a real release"],
+            weight_sha256_short="a1b2c3d4e5f6…",
+            notes=["demo"],
         )
     else:
         feat = ModelCardFeatures(version=args.version, **{k: v for k, v in metrics.items() if hasattr(ModelCardFeatures, k)})  # type: ignore[arg-type]
