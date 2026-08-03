@@ -1,7 +1,5 @@
 # Fine-Tuning AIMNet2 on ωB97M-D3(BJ)/def2-TZVPP Reference Trajectories for N-Heterocyclic Carbene Deprotonation
 
-**NHC0801** · 本地仓库 `nhc-deprot`
-
 氮杂环卡宾（NHC）脱质子：
 
 ```math
