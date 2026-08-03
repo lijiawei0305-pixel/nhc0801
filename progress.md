@@ -1,8 +1,11 @@
 # NHC0801 进度
 
-更新：2026-08-03T12:46:03Z
+更新：2026-08-03T13:35:15Z（服务器队列状态）
 
 每组 = 3 Train + 2 Val。Epoch-0 只算 Val。
+
+**摘要：** Teacher **30 PASS** / **2 RUNNING**（g033–g034）/ **338 PENDING**（g035–g372）。  
+Epoch-0：**g001–g004 RUNNING**（parent=gpu，约 12:33 UTC 起；尚无 completed/failed 收据）。
 
 | 组 | Teacher | Epoch-0 |
 | --- | --- | --- |
@@ -38,8 +41,8 @@
 | **g030** | PASS | — |
 | **g031** | PASS | — |
 | **g032** | PASS | — |
-| **g033** | RUNNING | — |
-| **g034** | RUNNING | — |
+| **g033** | RUNNING（端点约 4/10 PASS） | — |
+| **g034** | RUNNING（进行中） | — |
 | **g035–g372** | PENDING（338 组） | — |
 
 ---
@@ -440,7 +443,7 @@ Teacher：**PASS** · Epoch-0：**—**
 | Val1 | `CCHQIXLNMLRRNW-UHFFFAOYSA-N` |
 | Val2 | `CCMMQOQDGJHPLP-UHFFFAOYSA-N` |
 
-Teacher：**RUNNING** · Epoch-0：**—**
+Teacher：**RUNNING**（队列已 PASS 端点：Train2/Train3 的 cation+neutral；其余进行中）· Epoch-0：**—**
 
 ### g034
 
@@ -452,7 +455,7 @@ Teacher：**RUNNING** · Epoch-0：**—**
 | Val1 | `CDMTXYNJFVALLW-UHFFFAOYSA-N` |
 | Val2 | `CDMUCCJYYQPLTL-UHFFFAOYSA-N` |
 
-Teacher：**RUNNING** · Epoch-0：**—**
+Teacher：**RUNNING**（Train 端点在 GPU 上计算）· Epoch-0：**—**
 
 ### PENDING
 
