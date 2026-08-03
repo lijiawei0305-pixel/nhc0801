@@ -52,6 +52,71 @@ class _RecordingSchedulerBackend(DryRunTrainBackend):
         self.scheduler_steps.append(float(val_loss))
 
 
+class _MockLiveExportBackend:
+    """Non-dry backend with export_checkpoint — never loads torch/AIMNet2.
+
+    Records every export path so tests can assert checkpoint interval + last epoch.
+    """
+
+    def __init__(self, *, train_config_digest: str = "deadbeef" * 8) -> None:
+        self._inner = DryRunTrainBackend()
+        self.export_paths: list[Path] = []
+        self.train_config_digest = train_config_digest
+        self.scheduler_steps: list[float] = []
+
+    def train_epoch(
+        self,
+        batches: Any,
+        *,
+        split_frame_count: int,
+        energy_weight: float,
+        forces_weight: float,
+        seed: int,
+        epoch: int,
+    ) -> dict[str, Any]:
+        return self._inner.train_epoch(
+            batches,
+            split_frame_count=split_frame_count,
+            energy_weight=energy_weight,
+            forces_weight=forces_weight,
+            seed=seed,
+            epoch=epoch,
+        )
+
+    def evaluate(
+        self,
+        batches: Any,
+        *,
+        energy_weight: float,
+        forces_weight: float,
+        energy_bias: float = 0.0,
+    ) -> dict[str, Any]:
+        return self._inner.evaluate(
+            batches,
+            energy_weight=energy_weight,
+            forces_weight=forces_weight,
+            energy_bias=energy_bias,
+        )
+
+    def step_scheduler(self, val_loss: float) -> None:
+        self.scheduler_steps.append(float(val_loss))
+
+    def export_checkpoint(self, path: Path) -> dict[str, Any]:
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # Minimal fake weight file (not a real AIMNet2 bundle)
+        path.write_bytes(b"NHC0801_MOCK_CHECKPOINT\n")
+        self.export_paths.append(path)
+        raw = path.read_bytes()
+        return {
+            "path": str(path),
+            "bytes": len(raw),
+            "sha256": "0" * 64,
+            "live_weights_written": True,
+            "train_config_digest": self.train_config_digest,
+        }
+
+
 def test_train_products_land_under_run_id_not_legacy_seed(tmp_path: Path) -> None:
     layout = _bootstrap_dataset(tmp_path)
     run_id = "e1f100_mlp_shift"
@@ -201,3 +266,98 @@ def test_dry_run_regression_still_passes_with_default_run_id(tmp_path: Path) -> 
         epochs = {c["epoch"] for c in seed_res["checkpoints"]}
         assert epochs == {2, 4}
         assert seed_res["shortlist_epochs"]
+        # Dry-run must not claim live weights or write .pt
+        for ckpt in seed_res["checkpoints"]:
+            assert ckpt["live_weights_written"] is False
+            assert not Path(ckpt["weight_path"]).is_file()
+
+
+def test_live_export_checkpoint_writes_pt_under_run_seed(tmp_path: Path) -> None:
+    """M14fix-pt: live + export_checkpoint → epoch_NNNN.pt at each interval + last."""
+    layout = _bootstrap_dataset(tmp_path)
+    run_id = "e1f100_mlp_shift"
+    digest = "a" * 64
+    backend = _MockLiveExportBackend(train_config_digest=digest)
+    cfg = TrainingConfig(
+        seeds=(20260730,),
+        epochs=5,
+        checkpoint_interval_epochs=2,
+        run_id=run_id,
+    )
+    camp = run_multi_seed_training(
+        layout=layout,
+        config=cfg,
+        dry_run=False,
+        aimnet2_train_authorized=True,
+        backend=backend,
+    )
+    assert camp["status"] == "LIVE_TRAIN_PASS"
+    assert camp["failed_seed_count"] == 0
+
+    # interval 2 → epochs 2,4; always last → 5
+    assert [p.name for p in backend.export_paths] == [
+        "epoch_0002.pt",
+        "epoch_0004.pt",
+        "epoch_0005.pt",
+    ]
+    seed_dir = layout.train_run_seed_dir("g001", run_id, 20260730)
+    for pt in backend.export_paths:
+        assert pt.is_file()
+        assert pt.parent == seed_dir
+        assert run_id in pt.parts
+        assert "train_g001" in pt.parts
+
+    seed_res = camp["seed_results"][0]
+    assert seed_res["status"] == "PASS"
+    epochs = {c["epoch"] for c in seed_res["checkpoints"]}
+    assert epochs == {2, 4, 5}
+    for ckpt in seed_res["checkpoints"]:
+        assert ckpt["live_weights_written"] is True
+        assert ckpt["train_config_digest"] == digest
+        assert Path(ckpt["weight_path"]).is_file()
+        assert Path(ckpt["path"]).is_file()
+        meta = json.loads(Path(ckpt["path"]).read_text(encoding="utf-8"))
+        assert meta["live_weights_written"] is True
+        assert meta["train_config_digest"] == digest
+        assert meta["weight_export"]["live_weights_written"] is True
+
+
+def test_live_without_export_checkpoint_writes_meta_only(tmp_path: Path) -> None:
+    """Live backend without export_checkpoint still retains meta; no .pt required."""
+    layout = _bootstrap_dataset(tmp_path)
+    # RecordingSchedulerBackend is DryRunTrainBackend subclass — not allowed live.
+    # Use a minimal non-dry backend without export_checkpoint.
+    class _NoExportBackend:
+        def __init__(self) -> None:
+            self._inner = DryRunTrainBackend()
+
+        def train_epoch(self, *a: Any, **k: Any) -> dict[str, Any]:
+            return self._inner.train_epoch(*a, **k)
+
+        def evaluate(self, *a: Any, **k: Any) -> dict[str, Any]:
+            return self._inner.evaluate(*a, **k)
+
+        def step_scheduler(self, val_loss: float) -> None:
+            self._inner.step_scheduler(val_loss)
+
+    run_id = "e1f1_mlp"
+    cfg = TrainingConfig(
+        seeds=(20260730,),
+        epochs=2,
+        checkpoint_interval_epochs=1,
+        run_id=run_id,
+    )
+    camp = run_multi_seed_training(
+        layout=layout,
+        config=cfg,
+        dry_run=False,
+        aimnet2_train_authorized=True,
+        backend=_NoExportBackend(),
+    )
+    assert camp["status"] == "LIVE_TRAIN_PASS"
+    seed_dir = layout.train_run_seed_dir("g001", run_id, 20260730)
+    for ckpt in camp["seed_results"][0]["checkpoints"]:
+        assert ckpt["live_weights_written"] is False
+        assert Path(ckpt["path"]).is_file()
+        assert not Path(ckpt["weight_path"]).is_file()
+    assert list(seed_dir.glob("*.pt")) == []

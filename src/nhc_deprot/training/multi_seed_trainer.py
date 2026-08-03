@@ -48,7 +48,12 @@ class TrainerError(RuntimeError):
 
 
 class TrainBackend(Protocol):
-    """One training step and one eval pass (live torch or dry numpy)."""
+    """One training step and one eval pass (live torch or dry numpy).
+
+    Live backends that can persist weights should also implement
+    ``export_checkpoint(path) -> dict``; ``run_one_seed`` calls it at each
+    checkpoint interval when ``dry_run=False``. Dry-run backends omit it.
+    """
 
     def train_epoch(
         self,
@@ -326,10 +331,25 @@ def run_one_seed(
             result.epoch_logs.append(log)
             result.epochs_run = epoch
 
-            # Retain checkpoint meta every interval and always last epoch
+            # Retain checkpoint every interval and always last epoch.
+            # Live: call backend.export_checkpoint → epoch_NNNN.pt (M14fix-pt).
+            # Dry-run / backends without export_checkpoint: meta only.
             if epoch % config.checkpoint_interval_epochs == 0 or epoch == epochs:
                 meta_path = seed_dir / anames.train_checkpoint_meta_name(epoch)
                 weight_path = seed_dir / anames.train_checkpoint_weight_name(epoch)
+                live_weights_written = False
+                weight_export: dict[str, Any] | None = None
+                export_fn = getattr(backend, "export_checkpoint", None)
+                if not dry_run and callable(export_fn):
+                    weight_export = export_fn(weight_path)
+                    live_weights_written = bool(
+                        weight_export is not None
+                        and weight_export.get("live_weights_written", True)
+                    )
+                    if not weight_path.is_file():
+                        raise TrainerError(
+                            f"export_checkpoint did not create weight file: {weight_path}"
+                        )
                 ckpt: dict[str, Any] = {
                     "schema": CKPT_META_SCHEMA,
                     "batch_id": train_batch_id,
@@ -337,7 +357,7 @@ def run_one_seed(
                     "seed": seed,
                     "epoch": epoch,
                     "dry_run": dry_run,
-                    "live_weights_written": False,
+                    "live_weights_written": live_weights_written,
                     "official_base_weight_sha256": OFFICIAL_AIMNET2_WEIGHT_SHA256,
                     "validation_weighted_loss": val_out.get("validation_weighted_loss"),
                     "train_weighted_loss": train_out.get("train_weighted_loss"),
@@ -348,6 +368,11 @@ def run_one_seed(
                 }
                 if train_config_digest is not None:
                     ckpt["train_config_digest"] = train_config_digest
+                if weight_export is not None:
+                    ckpt["weight_export"] = weight_export
+                    # Prefer digest from export payload when backend supplies it
+                    if weight_export.get("train_config_digest") is not None:
+                        ckpt["train_config_digest"] = weight_export["train_config_digest"]
                 write_json(meta_path, ckpt, overwrite=True)
                 result.checkpoints.append(ckpt)
 
