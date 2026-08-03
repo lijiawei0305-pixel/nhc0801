@@ -265,7 +265,9 @@ def assert_profile_allowed_for_chemistry(
         )
 
 
-def worker_env_for_profile(profile: ResourceProfile, *, threads: int | None = None) -> dict[str, str]:
+def worker_env_for_profile(
+    profile: ResourceProfile, *, threads: int | None = None
+) -> dict[str, str]:
     """Environment variables every Parent-P01 / teacher worker must set."""
 
     t = int(threads if threads is not None else (

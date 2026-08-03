@@ -12,7 +12,7 @@ Dry-run uses a SimulatedResidualModel (numpy) so tests need no torch.
 from __future__ import annotations
 
 import math
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Final, Protocol
@@ -21,11 +21,11 @@ import numpy as np
 
 from nhc_deprot.contracts.forbidden_stacks import assert_quick_val_not_final_selector
 from nhc_deprot.contracts.tvt_gates import quick_checkpoint_shortlist
+from nhc_deprot.data.io_util import write_json
 from nhc_deprot.data.paths import OFFICIAL_AIMNET2_WEIGHT_SHA256
 from nhc_deprot.data.weighted_dataset import REQUIRED_ARRAYS, audit_weighted_dataset
 from nhc_deprot.generation import artifact_names as anames
 from nhc_deprot.generation.layout import GenerationLayout
-from nhc_deprot.data.io_util import write_json
 from nhc_deprot.training.config import TrainingConfig
 from nhc_deprot.training.weighted_loss import (
     SAMPLE_WEIGHT_KEY,

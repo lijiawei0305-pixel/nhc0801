@@ -9,8 +9,9 @@ Does **not** open Final Test. Does **not** authorize post-Test reselection.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Final, Mapping, Sequence
+from typing import Any, Final
 
 from nhc_deprot.contracts.tvt_gates import validate_numeric_addendum
 from nhc_deprot.data.io_util import load_json_object, write_json
@@ -146,6 +147,7 @@ def run_sci_val_campaign(
             raise SciValCampaignError("live sci-val requires parent + aimnet2_factory")
         parent_eng = parent
 
+    live_factory = aimnet2_factory
     results: list[dict[str, Any]] = []
     val_objects: list[CheckpointScientificValidation] = []
 
@@ -182,7 +184,9 @@ def run_sci_val_campaign(
                 handoff_pass=True,
             )
         else:
-            aim = aimnet2_factory(cand)
+            if live_factory is None:
+                raise SciValCampaignError("live sci-val requires aimnet2_factory")
+            aim = live_factory(cand)
             par = parent_eng
 
         agg = run_scientific_validation_for_checkpoint(

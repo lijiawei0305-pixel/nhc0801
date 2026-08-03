@@ -8,9 +8,9 @@ from pathlib import Path
 from nhc_deprot.generation.layout import init_generation
 from nhc_deprot.pipeline.checkpoint_shortlist import run_shortlist_campaign
 from nhc_deprot.pipeline.epoch0_receipt_audit import audit_epoch0_receipts
+from nhc_deprot.pipeline.epoch0_runner import run_epoch0_campaign
 from nhc_deprot.pipeline.freeze_package import build_freeze_package
 from nhc_deprot.pipeline.sci_val_campaign import run_sci_val_campaign
-from nhc_deprot.pipeline.epoch0_runner import run_epoch0_campaign
 
 
 def _write_fake_seed(train_dir: Path, seed: int, losses: list[tuple[int, float]]) -> None:

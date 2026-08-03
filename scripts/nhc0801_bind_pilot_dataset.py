@@ -7,7 +7,7 @@ import argparse
 import json
 import os
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -106,7 +106,7 @@ def main(argv: list[str] | None = None) -> int:
     )
     binding = {
         "schema": "nhc0801-pilot-dataset-binding-v1",
-        "created_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "created_at_utc": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "generation_id": layout.generation_id,
         "mode": args.mode,
         "weighted_src": str(args.weighted_src.resolve()),

@@ -21,7 +21,7 @@ import os
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -37,7 +37,7 @@ TRAIN_SET = frozenset(TRAIN_ROOTS)
 
 
 def utc() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def log(msg: str, log_path: Path) -> None:
@@ -156,18 +156,16 @@ def g001_e0_busy_or_done(logdir: Path) -> str:
         from nhc_deprot.generation.artifact_names import (
             EPOCH0_LIVE_LOG,
             EPOCH0_LIVE_LOG_LEGACY,
-            resolve_existing,
         )
+
+        names: tuple[str, ...] = (str(EPOCH0_LIVE_LOG), *[str(x) for x in EPOCH0_LIVE_LOG_LEGACY])
     except Exception:  # noqa: BLE001
-        resolve_existing = None  # type: ignore[assignment]
-        EPOCH0_LIVE_LOG = "live_epoch0_g001.out"
-        EPOCH0_LIVE_LOG_LEGACY = (
+        names = (
+            "live_epoch0_g001.out",
             "live_epoch0_02c.out",
             "live_epoch0.out",
             "g001_epoch0_rerun.out",
         )
-
-    names = (EPOCH0_LIVE_LOG, *EPOCH0_LIVE_LOG_LEGACY)
     texts: list[str] = []
     for name in names:
         p = logdir / name
@@ -392,13 +390,17 @@ def main(argv: list[str] | None = None) -> int:
                     }
                     save_state(state_path, state)
                 elif st == "running":
-                    log("g001 Epoch-0 still running externally (both Val roots); skip enqueue", log_path)
+                    log(
+                        "g001 Epoch-0 still running externally (both Val roots); skip enqueue",
+                        log_path,
+                    )
                 continue
             if bid in state.get("completed", {}):
                 continue
             if bid in running:
                 continue
-            if bid in state.get("failed", {}) and int(state["failed"][bid].get("retries") or 0) >= 2:
+            failed = state.get("failed", {})
+            if bid in failed and int(failed[bid].get("retries") or 0) >= 2:
                 continue
 
             picked = pick_e0_gpus(1, exclude=used_gpus)

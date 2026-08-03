@@ -98,7 +98,7 @@ def test_live_without_auth_fails(tmp_path: Path) -> None:
         run_teacher_campaign(
             layout=layout,
             root_ids=TRAIN_ROOTS[:1],
-            engine=FakeLive(),  # type: ignore[arg-type]
+            engine=FakeLive(),
             dry_run=False,
             teacher_pyscf_authorized=False,
             claim_pass=True,

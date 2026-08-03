@@ -12,8 +12,9 @@ Writers of *new* logs should use the CANONICAL names. Readers must use
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from pathlib import Path
-from typing import Final, Iterable, Sequence
+from typing import Final
 
 # --- Fine-tune / AIMNet2 train (group-scoped, flat like teacher_gpu_g00N) ---
 # Human: "g001 的训练" → train_g001/

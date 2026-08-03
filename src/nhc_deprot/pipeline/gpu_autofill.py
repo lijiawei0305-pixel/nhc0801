@@ -11,13 +11,13 @@ from __future__ import annotations
 
 import json
 import os
-import signal
 import subprocess
 import time
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any
 
 from nhc_deprot.data.paths import TRAIN_ROOTS, VALIDATION_ROOTS
 from nhc_deprot.pipeline.live_teacher import LiveParentTeacherEngine
@@ -34,7 +34,7 @@ GRAD_RMS = 3.0e-4
 
 
 def _utc() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def load_pool_inchikeys(pool_csv: Path) -> list[str]:
@@ -196,7 +196,9 @@ def build_queue(
     return queue, no_xyz, done_roots
 
 
-def assign_batches(roots_in_order: Sequence[str], batch_size: int, start_index: int) -> dict[str, list[str]]:
+def assign_batches(
+    roots_in_order: Sequence[str], batch_size: int, start_index: int
+) -> dict[str, list[str]]:
     batches: dict[str, list[str]] = {}
     idx = start_index
     for i in range(0, len(roots_in_order), batch_size):
@@ -282,7 +284,7 @@ def spawn_endpoint(
     gpu_index: int,
     max_steps: int,
     host_threads: int,
-) -> subprocess.Popen[str]:
+) -> subprocess.Popen[Any]:
     """Spawn a detached one-endpoint job; log under state_dir/jobs/."""
     jobs = state_dir / "jobs"
     jobs.mkdir(parents=True, exist_ok=True)
@@ -294,7 +296,14 @@ import json, sys
 from pathlib import Path
 sys.path.insert(0, {str(nhc0801_root / "src")!r})
 from nhc_deprot.pipeline.gpu_autofill import run_one_endpoint_job
-out = Path({str(nhc0801_root)!r}) / "runs" / {generation_id!r} / {out_subdir!r} / {task["root_id"]!r} / {task["endpoint"]!r}
+out = (
+    Path({str(nhc0801_root)!r})
+    / "runs"
+    / {generation_id!r}
+    / {out_subdir!r}
+    / {task["root_id"]!r}
+    / {task["endpoint"]!r}
+)
 r = run_one_endpoint_job(
     root_id={task["root_id"]!r},
     endpoint={task["endpoint"]!r},

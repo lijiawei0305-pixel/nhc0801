@@ -20,6 +20,7 @@ from typing import Any
 from nhc_deprot.data.io_util import sha256_file, write_json
 from nhc_deprot.generation import artifact_names as anames
 from nhc_deprot.generation.layout import (
+    GenerationError,
     GenerationLayout,
     default_model_version_for_train_batch,
     normalize_model_version,

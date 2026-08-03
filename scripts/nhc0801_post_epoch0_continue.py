@@ -12,7 +12,7 @@ import argparse
 import json
 import sys
 import traceback
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -34,7 +34,7 @@ from nhc_deprot.pipeline.sci_val_campaign import run_sci_val_campaign  # noqa: E
 
 
 def _utc() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -79,7 +79,8 @@ def main(argv: list[str] | None = None) -> int:
         )
         print(format_audit_summary(audit), flush=True)
         if not audit.get("audit_pass"):
-            # still continue shortlist/freeze with what we have, but mark fail closed for sci-val live
+            # still continue shortlist/freeze with what we have,
+            # but mark fail closed for sci-val live
             report["epoch0_audit_failed"] = True
     except Exception as exc:  # noqa: BLE001
         report["steps"]["epoch0_audit"] = {
@@ -119,7 +120,8 @@ def main(argv: list[str] | None = None) -> int:
         }
         print(f"[7] shortlist FAIL: {exc}", flush=True)
 
-    # --- steps 8–9 sci-val (dry-run: wires selection; live finetuned GAU needs separate auth/engine) ---
+    # --- steps 8–9 sci-val (dry-run: wires selection;
+    # live finetuned GAU needs separate auth/engine) ---
     if not args.skip_sci_val:
         try:
             print("[8-9] dry-run sci-val over shortlist (Final Test sealed)", flush=True)

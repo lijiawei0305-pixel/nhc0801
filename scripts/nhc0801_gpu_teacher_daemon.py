@@ -28,15 +28,14 @@ from nhc_deprot.pipeline.gpu_autofill import (  # noqa: E402
     DEFAULT_XYZ_SEARCH,
     G001_ROOTS,
     AutofillState,
+    _utc,
     assign_batches,
-    build_queue,
     endpoint_done_ok,
     has_pair,
     list_free_gpu_ids,
     load_pool_inchikeys,
     resolve_xyz_dirs,
     spawn_endpoint,
-    _utc,
 )
 
 
@@ -106,8 +105,8 @@ def rebuild_queue(state: AutofillState, gen_root: Path, xyz_dirs: list[Path]) ->
     if existing:
         start = max(start, max(existing) + 1)
     # only create batches for roots not yet assigned
-    assigned = set()
-    for b, meta in state.batches.items():
+    assigned: set[str] = set()
+    for _b, meta in state.batches.items():
         assigned.update(meta.get("roots") or [])
     unassigned = [r for r in pending_roots if r not in assigned]
     new_batches = assign_batches(unassigned, state.batch_size_roots, start)
@@ -138,7 +137,10 @@ def root_batch_id(state: AutofillState, root_id: str) -> str:
 
 
 def _pid_still_running(pid: int) -> bool:
-    """False if missing or zombie (Z). os.kill(pid,0) is true for zombies — must not treat as alive."""
+    """False if missing or zombie (Z).
+
+    os.kill(pid, 0) is true for zombies — must not treat as alive.
+    """
     try:
         status = Path(f"/proc/{pid}/status").read_text(encoding="utf-8")
     except OSError:
@@ -215,7 +217,7 @@ def reap(state: AutofillState, state_path: Path) -> None:
     for k in finished_keys:
         state.running.pop(k, None)
     # batch completion
-    for b, meta in state.batches.items():
+    for _b, meta in state.batches.items():
         roots = meta.get("roots") or []
         if not roots:
             continue
@@ -309,7 +311,8 @@ def main(argv: list[str] | None = None) -> int:
     signal.signal(signal.SIGINT, _sig)
 
     print(
-        f"[gpu-teacher] start {_utc()} pool={pool_csv} gpus={state.gpu_ids} xyz_dirs={len(xyz_dirs)}",
+        f"[gpu-teacher] start {_utc()} pool={pool_csv} "
+        f"gpus={state.gpu_ids} xyz_dirs={len(xyz_dirs)}",
         flush=True,
     )
 
@@ -321,7 +324,11 @@ def main(argv: list[str] | None = None) -> int:
         if not state.queue and not state.running:
             state.stop_reason = "pool_exhausted_or_all_done"
             state.save(state_path)
-            print(f"[gpu-teacher] STOP {state.stop_reason} done={len(state.done)} failed={len(state.failed)}", flush=True)
+            print(
+                f"[gpu-teacher] STOP {state.stop_reason} "
+                f"done={len(state.done)} failed={len(state.failed)}",
+                flush=True,
+            )
             return 0
 
         free = list_free_gpu_ids(state.gpu_ids)
@@ -329,7 +336,8 @@ def main(argv: list[str] | None = None) -> int:
         claimed = {int(v["gpu_index"]) for v in state.running.values()}
         free = [g for g in free if g not in claimed]
         print(
-            f"[gpu-teacher] {_utc()} queue={len(state.queue)} running={len(state.running)} free_gpus={free}",
+            f"[gpu-teacher] {_utc()} queue={len(state.queue)} "
+            f"running={len(state.running)} free_gpus={free}",
             flush=True,
         )
 

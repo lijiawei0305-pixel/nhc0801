@@ -5,7 +5,6 @@ Safe to call after live epoch-0 finishes. Does not start chemistry.
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Final
 
 from nhc_deprot.data.io_util import load_json_object, write_json
@@ -71,7 +70,10 @@ def audit_epoch0_receipts(
 
     camp_status = campaign.get("status")
     ok = (
-        bool(str(camp_status).endswith("PASS") or camp_status in {"LIVE_EPOCH0_PASS", "DRY_RUN_EPOCH0_PASS"})
+        bool(
+            str(camp_status).endswith("PASS")
+            or camp_status in {"LIVE_EPOCH0_PASS", "DRY_RUN_EPOCH0_PASS"}
+        )
         and not missing
         and not failed
         and int(campaign.get("failed_root_count") or 0) == 0

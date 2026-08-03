@@ -7,8 +7,9 @@ Does not open Final Test. Resource affinity is the caller's responsibility.
 from __future__ import annotations
 
 import time
+from collections.abc import Mapping, Sequence
 from pathlib import Path
-from typing import Any, Mapping, Sequence
+from typing import Any
 
 from nhc_deprot.contracts.parent_protocol import (
     BASIS,

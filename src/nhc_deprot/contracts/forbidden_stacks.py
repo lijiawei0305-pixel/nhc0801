@@ -6,7 +6,8 @@ Historical finetune that selects the final model by quick-val loss is forbidden.
 
 from __future__ import annotations
 
-from typing import Final, Mapping
+from collections.abc import Mapping
+from typing import Any, Final, cast
 
 from nhc_deprot.contracts.parent_protocol import BASIS, FUNCTIONAL, PROTOCOL_SHA256
 
@@ -52,7 +53,9 @@ def assert_parent_protocol_allowed(meta: Mapping[str, object]) -> None:
     fmax = meta.get("fmax") or meta.get("aimnet2_fmax") or meta.get("preopt_fmax")
     if fmax is not None:
         try:
-            if abs(float(fmax) - 0.05) < 1e-12 and meta.get("role") in {
+            # cast: meta values are object; runtime float() accepted the same inputs.
+            fmax_f = float(cast(Any, fmax))
+            if abs(fmax_f - 0.05) < 1e-12 and meta.get("role") in {
                 "parent_stop",
                 "parent",
                 "final_convergence",

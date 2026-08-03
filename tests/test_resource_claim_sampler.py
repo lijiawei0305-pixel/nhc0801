@@ -9,7 +9,7 @@ import pytest
 
 from nhc_deprot.generation.layout import init_generation
 from nhc_deprot.resources.claim import HostSnapshot, pilot_v002_busy_samples
-from nhc_deprot.resources.claim_runner import evaluate_injected_samples, run_resource_claim
+from nhc_deprot.resources.claim_runner import evaluate_injected_samples
 from nhc_deprot.resources.host_sampler import (
     expand_cpu_list,
     parse_df_available_bytes,

@@ -67,7 +67,9 @@ def _make_npz(
     return buf.getvalue()
 
 
-def _write_receipt(root: Path, relative: str, raw: bytes, *, atom_count: int, frame_count: int) -> dict[str, object]:
+def _write_receipt(
+    root: Path, relative: str, raw: bytes, *, atom_count: int, frame_count: int
+) -> dict[str, object]:
     path = root / relative
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(raw)
@@ -172,8 +174,14 @@ def _build_synthetic_dataset(tmp_path: Path) -> Path:
             frame_count=4,
         ),
     ]
-    train_frames = sum(int(r["frame_count"]) for r in train_receipts)
-    val_frames = sum(int(r["frame_count"]) for r in val_receipts)
+    def _frame_count(r: dict[str, object]) -> int:
+        fc = r["frame_count"]
+        if isinstance(fc, (int, str)):
+            return int(fc)
+        raise TypeError(f"frame_count must be int|str, got {type(fc)}")
+
+    train_frames = sum(_frame_count(r) for r in train_receipts)
+    val_frames = sum(_frame_count(r) for r in val_receipts)
     manifest = {
         "schema": MANIFEST_SCHEMA,
         "scope": "development",

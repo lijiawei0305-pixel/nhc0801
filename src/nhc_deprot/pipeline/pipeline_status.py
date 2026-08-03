@@ -7,7 +7,7 @@ TUI is read-only and consumes these files + other campaign receipts.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Final
 
@@ -33,7 +33,7 @@ STEP_DEFS: Final = (
 
 
 def _utc_now() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def pipeline_dir(layout: GenerationLayout) -> Path:
@@ -147,8 +147,14 @@ def scan_generation_status(layout: GenerationLayout) -> dict[str, Any]:
             layout.train_dir / "campaign_receipt_live.json",
             layout.train_dir / "campaign_receipt.json",
         ],
-        7: [layout.sci_val_dir / "shortlist_campaign.json", layout.logs_dir / "shortlist_campaign.json"],
-        8: [layout.sci_val_dir / "campaign_receipt.json", layout.logs_dir / "sci_val_campaign_receipt.json"],
+        7: [
+            layout.sci_val_dir / "shortlist_campaign.json",
+            layout.logs_dir / "shortlist_campaign.json",
+        ],
+        8: [
+            layout.sci_val_dir / "campaign_receipt.json",
+            layout.logs_dir / "sci_val_campaign_receipt.json",
+        ],
         9: [layout.sci_val_dir / "selection_receipt.json"],
         10: [layout.freeze_dir / "freeze_manifest.json", layout.logs_dir / "freeze_manifest.json"],
     }

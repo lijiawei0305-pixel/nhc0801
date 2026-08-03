@@ -21,7 +21,7 @@ import os
 import sys
 import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -52,7 +52,7 @@ WAVE_LABEL = "g001_teacher"
 
 
 def _utc() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _mem_available_bytes() -> int:
@@ -80,8 +80,9 @@ def _apply_slot_env(*, threads: int, cpu_list: str) -> None:
     # Hard pin: never schedule on 100-111
     try:
         ids = expand_cpu_list(cpu_list)
-        if ids:
-            os.sched_setaffinity(0, set(ids))
+        setaffinity = getattr(os, "sched_setaffinity", None)
+        if ids and setaffinity is not None:
+            setaffinity(0, set(ids))
     except (AttributeError, OSError, ValueError) as exc:
         print(f"[warn] sched_setaffinity failed: {exc}", flush=True)
 
@@ -128,7 +129,11 @@ def _run_one_endpoint(
             multiplicity=mult,
             output_dir=out_dir,
         )
-        status = "PASS" if result.get("converged") and int(result.get("frame_count") or 0) >= 2 else "PARTIAL"
+        status = (
+            "PASS"
+            if result.get("converged") and int(result.get("frame_count") or 0) >= 2
+            else "PARTIAL"
+        )
         print(
             f"[teacher] END slot={slot_id} {root_id}/{endpoint} -> {status} "
             f"frames={result.get('frame_count')} wall={result.get('wall_seconds')}",
@@ -207,7 +212,11 @@ def main(argv: list[str] | None = None) -> int:
             flush=True,
         )
     prof = get_profile(args.profile)
-    threads = int(args.threads or prof.threads_per_worker)
+    raw_threads = args.threads if args.threads is not None else prof.threads_per_worker
+    if isinstance(raw_threads, tuple):
+        threads = int(raw_threads[0])
+    else:
+        threads = int(raw_threads)
     if threads != 10 and args.profile == PROFILE_ID:
         print(f"[warn] profile default is 10; using t={threads}", flush=True)
 
@@ -362,7 +371,18 @@ def main(argv: list[str] | None = None) -> int:
             "profile": args.profile,
         },
     )
-    print(json.dumps({"status": status, "passed": len(passed), "partial": len(partial), "failed": len(failed)}, indent=2), flush=True)
+    print(
+        json.dumps(
+            {
+                "status": status,
+                "passed": len(passed),
+                "partial": len(partial),
+                "failed": len(failed),
+            },
+            indent=2,
+        ),
+        flush=True,
+    )
     print(f"TEACHER_WAVE_EXIT status={status}", flush=True)
     return 0 if status != "LIVE_TEACHER_FAIL" else 1
 

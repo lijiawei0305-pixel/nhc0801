@@ -9,13 +9,12 @@ from __future__ import annotations
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Final, Mapping
+from typing import Any, Final
 
 import yaml
 
 from nhc_deprot.contracts.tvt_gates import TVTContractError, validate_numeric_addendum
 from nhc_deprot.data.development_split import load_packaged_v004_day1_split
-from nhc_deprot.data.io_util import load_json_object
 from nhc_deprot.data.weighted_dataset import audit_public_weighted_result
 
 # Original V004 reason codes (kept for continuity)
@@ -300,7 +299,10 @@ def assess_training_readiness(
                 status="RESOLVED",
                 severity="hard",
                 summary="development split + weighted-dataset public result PASS",
-                resolution="server NPZ remains at $WJW/.../phase9b_aimnet2_v004_weighted_dataset_v001",
+                resolution=(
+                    "server NPZ remains at "
+                    "$WJW/.../phase9b_aimnet2_v004_weighted_dataset_v001"
+                ),
             )
         )
     except Exception as exc:  # noqa: BLE001 — readiness surface

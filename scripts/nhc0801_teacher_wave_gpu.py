@@ -30,7 +30,7 @@ import os
 import sys
 import traceback
 from concurrent.futures import ProcessPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -51,7 +51,7 @@ PILOT_ROOTS = set(TRAIN_ROOTS) | set(VALIDATION_ROOTS)
 
 
 def _utc() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def list_complete_gold_roots(gold_xyz_dir: Path) -> list[str]:

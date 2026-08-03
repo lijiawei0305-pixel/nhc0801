@@ -148,7 +148,11 @@ def render_model_card_svg(feat: ModelCardFeatures, *, width: int = 760) -> str:
     cost_items: list[tuple[str, str, float | None, str]] = [
         (
             "Parent steps vs e0",
-            "—" if feat.vs_epoch0_opt_steps_ratio is None else f"{feat.vs_epoch0_opt_steps_ratio:.2f}×",
+            (
+                "—"
+                if feat.vs_epoch0_opt_steps_ratio is None
+                else f"{feat.vs_epoch0_opt_steps_ratio:.2f}×"
+            ),
             _norm_ratio(feat.vs_epoch0_opt_steps_ratio),
             "#f59e0b",
         ),
@@ -174,7 +178,7 @@ def render_model_card_svg(feat: ModelCardFeatures, *, width: int = 760) -> str:
     parts: list[str] = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
         f'viewBox="0 0 {width} {height}">',
-        f'<rect width="100%" height="100%" fill="#f8fafc"/>',
+        '<rect width="100%" height="100%" fill="#f8fafc"/>',
         f'<rect x="16" y="16" width="{width - 32}" height="{height - 32}" rx="12" '
         f'fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>',
         f'<rect x="16" y="16" width="8" height="{height - 32}" rx="2" fill="#0ea5e9"/>',

@@ -11,9 +11,10 @@ until the corresponding gate is opened.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Final
+from typing import Any, Final
 
 from nhc_deprot.contracts.forbidden_stacks import (
     ForbiddenStackError,

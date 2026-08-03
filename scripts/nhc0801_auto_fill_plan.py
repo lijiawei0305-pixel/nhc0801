@@ -18,8 +18,11 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from nhc_deprot.resources.auto_fill import build_auto_fill_plan  # noqa: E402
 from nhc_deprot.resources.host_sampler import expand_cpu_list  # noqa: E402
-from nhc_deprot.resources.profiles import OFFICIAL_DEFAULT_V002, get_profile  # noqa: E402
-from nhc_deprot.resources.profiles import worker_env_for_profile  # noqa: E402
+from nhc_deprot.resources.profiles import (  # noqa: E402
+    OFFICIAL_DEFAULT_V002,
+    get_profile,
+    worker_env_for_profile,  # noqa: E402
+)
 
 
 def main(argv: list[str] | None = None) -> int:

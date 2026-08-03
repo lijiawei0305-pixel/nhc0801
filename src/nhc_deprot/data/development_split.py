@@ -9,9 +9,10 @@ Does not open Final Test identities or payloads.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Final, Mapping, cast
+from typing import Any, Final, cast
 
 from nhc_deprot.data.errors import DatasetError
 from nhc_deprot.data.io_util import load_json_object, sha256_bytes

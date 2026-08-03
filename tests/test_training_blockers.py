@@ -25,7 +25,8 @@ def test_numeric_calibration_frozen_and_valid() -> None:
     payload = load_numeric_calibration()
     assert payload["status"] == "FROZEN"
     assert payload["chosen_before_final_test"] is True
-    assert payload["label_error_tolerance_kcal_mol"] > 0
+    tol = payload["label_error_tolerance_kcal_mol"]
+    assert isinstance(tol, (int, float)) and tol > 0
 
 
 def test_numeric_blocker_resolved() -> None:

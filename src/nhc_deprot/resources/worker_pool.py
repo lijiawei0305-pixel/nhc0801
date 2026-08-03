@@ -6,8 +6,9 @@ Does not spawn processes or run chemistry — claim/release + assignment only.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
-from typing import Any, Sequence
+from typing import Any
 
 from nhc_deprot.resources.profiles import ResourceProfile, assert_profile_allowed_for_chemistry
 
@@ -117,7 +118,9 @@ def claim_next_root(pool: WorkerPool, worker_id: int) -> str | None:
     return None
 
 
-def complete_root(pool: WorkerPool, root_id: str, *, success: bool, reason: str | None = None) -> None:
+def complete_root(
+    pool: WorkerPool, root_id: str, *, success: bool, reason: str | None = None
+) -> None:
     task = pool.tasks.get(root_id)
     if task is None:
         raise WorkerPoolError(f"unknown root: {root_id}")

@@ -34,6 +34,7 @@ from nhc_deprot.contracts.parent_protocol import (
     PROTOCOL_SHA256,
     deprotonation_electronic_kcal,
 )
+from nhc_deprot.data.io_util import write_json
 from nhc_deprot.data.paths import (
     OFFICIAL_AIMNET2_WEIGHT_SHA256,
     VALIDATION_ROOTS,
@@ -49,7 +50,6 @@ from nhc_deprot.pipeline.scientific_validation import (
     SimulatedParentEngine,
     run_scientific_validation_for_checkpoint,
 )
-from nhc_deprot.data.io_util import write_json
 
 EPOCH0_CAMPAIGN_SCHEMA: Final = "nhc0801-epoch0-campaign-v1"
 EPOCH0_ROOT_SCHEMA: Final = "nhc0801-epoch0-root-receipt-v1"
@@ -67,7 +67,8 @@ class Epoch0Config:
     official_weight_sha256: str = OFFICIAL_AIMNET2_WEIGHT_SHA256
     checkpoint_id: str = CHECKPOINT_ID
     validation_roots: tuple[str, ...] = VALIDATION_ROOTS
-    # Dry-run synthetic parent energies (must match SimulatedParentEngine defaults unless overridden)
+    # Dry-run synthetic parent energies
+    # (must match SimulatedParentEngine defaults unless overridden)
     ref_energy_cation: float = -100.0
     ref_energy_neutral: float = -99.5
     epoch0_parent_opt_steps: int = 18  # slightly better than a worse baseline for demo metrics
@@ -183,7 +184,7 @@ def run_epoch0_campaign(
         geometries=geos,
         references=refs,
         aimnet2=None,
-        parent=pure_parent or parent,  # type: ignore[arg-type]
+        parent=pure_parent or parent,
         profile=gau,
         scientific_validation_live=False,
         live=False,
@@ -198,7 +199,7 @@ def run_epoch0_campaign(
         geometries=geos,
         references=refs,
         aimnet2=aimnet2,
-        parent=parent,  # type: ignore[arg-type]
+        parent=parent,
         profile=gau,
         scientific_validation_live=False,
         live=False,

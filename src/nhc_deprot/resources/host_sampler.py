@@ -12,9 +12,9 @@ import re
 import subprocess
 import time
 from dataclasses import asdict, dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Final, Sequence
+from typing import Any, Final
 
 from nhc_deprot.resources.claim import HostSnapshot
 
@@ -276,7 +276,7 @@ def take_two_samples(
         "cpu_list": request.cpu_list,
         "disk_path": request.disk_path,
         "ssh_alias_set": bool(request.ssh_alias),
-        "sampled_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "sampled_at_utc": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     return s0, s1, meta
 

@@ -6,8 +6,9 @@ Authority: docs/contracts/RESOURCE_SCHEDULING_V001.md + RESOURCE_PROFILES_V002.y
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import asdict, dataclass, field
-from typing import Any, Sequence
+from typing import Any
 
 from nhc_deprot.resources.host_sampler import expand_cpu_list
 from nhc_deprot.resources.profiles import (

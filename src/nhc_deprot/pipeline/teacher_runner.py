@@ -426,14 +426,9 @@ def plan_teacher_paths(
 
     roots = list(root_ids or default_pilot_root_queue())
     _assert_no_final_test_roots(roots)
-    plan = {
-        "mindmap_step": MINDMAP_STEP,
-        "generation_id": layout.generation_id,
-        "teacher_dir": str(layout.teacher_dir),
-        "roots": [],
-    }
+    root_plans: list[dict[str, str]] = []
     for root_id in roots:
-        plan["roots"].append(
+        root_plans.append(
             {
                 "root_id": root_id,
                 "cation_dir": str(layout.teacher_endpoint_dir(root_id, "cation")),
@@ -441,4 +436,10 @@ def plan_teacher_paths(
                 "root_receipt": str(layout.teacher_root_dir(root_id) / "root_receipt.json"),
             }
         )
+    plan: dict[str, Any] = {
+        "mindmap_step": MINDMAP_STEP,
+        "generation_id": layout.generation_id,
+        "teacher_dir": str(layout.teacher_dir),
+        "roots": root_plans,
+    }
     return plan

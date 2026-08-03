@@ -25,12 +25,11 @@ Live PySCF/AIMNet2 engines are injected by authorized server runners only.
 from __future__ import annotations
 
 import math
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
-from typing import Any, Final, Protocol
+from typing import Any, Final, Protocol, cast
 
 from nhc_deprot.contracts.forbidden_stacks import (
-    ForbiddenStackError,
     assert_parent_protocol_allowed,
     assert_quick_val_not_final_selector,
 )
@@ -426,7 +425,7 @@ def run_endpoint_route(
             receipt.catastrophic_reasons.append("IDENTITY_OR_TOPOLOGY_GATE_FAILED")
             return receipt
 
-        handoff_coords = _coords_tuple(aim["coordinates"])  # type: ignore[arg-type]
+        handoff_coords = _coords_tuple(aim["coordinates"])
         handoff = exact_byte_handoff_payload(
             elements=handoff_elements,
             coordinates=handoff_coords,
@@ -456,6 +455,13 @@ def run_endpoint_route(
         grad = first.get("gradient_hartree_bohr")
         if grad is None:
             grad = first.get("gradient_hartree_per_bohr")
+        grad_seq: Sequence[Sequence[float]] | None
+        if grad is None:
+            grad_seq = None
+        elif isinstance(grad, Sequence) and not isinstance(grad, (str, bytes)):
+            grad_seq = cast(Sequence[Sequence[float]], grad)
+        else:
+            grad_seq = None
         classification = classify_first_parent_gradient(
             profile=profile,
             scf_converged=bool(first.get("scf_converged")),
@@ -464,7 +470,7 @@ def run_endpoint_route(
                 if first.get("energy_hartree") is not None
                 else None
             ),
-            gradient_hartree_bohr=grad,  # type: ignore[arg-type]
+            gradient_hartree_bohr=grad_seq,
             coordinates_finite=bool(first.get("coordinates_finite", True)),
             atom_identity_preserved=bool(first.get("atom_identity_preserved", True)),
             charge_multiplicity_preserved=bool(
@@ -481,9 +487,11 @@ def run_endpoint_route(
         if receipt.handoff_classification == FAILED_PARENT_HANDOFF:
             receipt.catastrophic = True
             receipt.catastrophic_reasons.append(FAILED_PARENT_HANDOFF)
-            receipt.catastrophic_reasons.extend(
-                list(classification.get("failure_types") or [])
-            )
+            failure_types = classification.get("failure_types") or []
+            if isinstance(failure_types, list):
+                receipt.catastrophic_reasons.extend(str(x) for x in failure_types)
+            elif isinstance(failure_types, tuple):
+                receipt.catastrophic_reasons.extend(str(x) for x in failure_types)
             return receipt
         if receipt.handoff_classification not in {
             HANDOFF_CALIBRATION_PASS,

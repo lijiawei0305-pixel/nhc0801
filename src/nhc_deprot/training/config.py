@@ -5,7 +5,7 @@ Matches pilot generation config training block; not a live-train authorization.
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from typing import Any, Final
 
 DEFAULT_SEEDS: Final = (20260730, 20260731, 20260732)

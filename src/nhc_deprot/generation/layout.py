@@ -6,7 +6,6 @@ No live chemistry here — directory + metadata only.
 
 from __future__ import annotations
 
-import json
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Final
@@ -407,7 +406,9 @@ def load_generation_meta(path: Path) -> GenerationMeta:
             payload.get("final_test_identities_exposed", False)
         ),
         live_chemistry_authorized=bool(payload.get("live_chemistry_authorized", False)),
-        source_commit=payload.get("source_commit"),  # type: ignore[arg-type]
+        source_commit=(
+            str(payload["source_commit"]) if payload.get("source_commit") is not None else None
+        ),
         notes=list(payload.get("notes") or []),
     )
 

@@ -12,15 +12,14 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import asdict, dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Final, Protocol
 
 from nhc_deprot.contracts.parent_protocol import PROTOCOL_SHA256
-from nhc_deprot.data.io_util import canonical_json, load_json_object, sha256_bytes
+from nhc_deprot.data.io_util import canonical_json, load_json_object, sha256_bytes, write_json
 from nhc_deprot.data.paths import TRAIN_ROOTS, VALIDATION_ROOTS
 from nhc_deprot.generation.layout import GenerationLayout
-from nhc_deprot.data.io_util import write_json
 from nhc_deprot.pipeline.teacher_runner import FRAME_SCHEMA
 
 D3_RECEIPT_SCHEMA: Final = "nhc0801-training-d3-projection-v1"
@@ -53,10 +52,7 @@ class DryRunD3Projector:
         if not isinstance(grad, list) or not grad:
             raise D3ProjectionError("teacher frame missing gradient")
         d3_e = total_e * self.fraction
-        d3_g = [
-            [float(c) * self.fraction for c in row]  # type: ignore[union-attr]
-            for row in grad
-        ]
+        d3_g = [[float(c) * self.fraction for c in row] for row in grad]
         return {
             "d3_energy_hartree": d3_e,
             "d3_gradient_hartree_per_bohr": d3_g,
@@ -115,7 +111,7 @@ def project_endpoint(
             raise D3ProjectionError("teacher gradient missing")
         short_e = total_e - d3_e
         short_g = [
-            [float(t) - float(d) for t, d in zip(trow, drow, strict=True)]  # type: ignore[arg-type]
+            [float(t) - float(d) for t, d in zip(trow, drow, strict=True)]
             for trow, drow in zip(total_g, d3_g, strict=True)
         ]
         short_f = [[-c for c in row] for row in short_g]
@@ -202,7 +198,10 @@ def run_d3_campaign(
             "live D3 projection not authorized in this skeleton; use dry_run=True"
         )
 
-    roots = list(root_ids or (list(train_roots or TRAIN_ROOTS) + list(validation_roots or VALIDATION_ROOTS)))
+    roots = list(
+        root_ids
+        or (list(train_roots or TRAIN_ROOTS) + list(validation_roots or VALIDATION_ROOTS))
+    )
     eng: D3Projector = projector or DryRunD3Projector()
     endpoint_rows: list[dict[str, Any]] = []
     total_frames = 0

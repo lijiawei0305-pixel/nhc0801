@@ -9,9 +9,10 @@ from __future__ import annotations
 
 import hashlib
 import subprocess
-from datetime import datetime, timezone
+from collections.abc import Mapping
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Final, Mapping
+from typing import Any, Final
 
 from nhc_deprot.contracts.parent_protocol import BASIS, FUNCTIONAL, PROTOCOL_ID, PROTOCOL_SHA256
 from nhc_deprot.data.io_util import load_json_object, write_json
@@ -131,7 +132,7 @@ def build_freeze_package(
         "mindmap_step": MINDMAP_STEP,
         "generation_id": layout.generation_id,
         "status": status,
-        "created_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "created_at_utc": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "splits": {
             "train_roots": list(TRAIN_ROOTS),
             "validation_roots": list(VALIDATION_ROOTS),
@@ -173,7 +174,11 @@ def build_freeze_package(
         "model_state": (
             "MODEL_FROZEN"
             if selected and not sci_was_dry
-            else ("MODEL_PROVISIONAL_DRY_SELECTION" if selected and sci_was_dry else "MODEL_NOT_FROZEN")
+            else (
+                "MODEL_PROVISIONAL_DRY_SELECTION"
+                if selected and sci_was_dry
+                else "MODEL_NOT_FROZEN"
+            )
         ),
         "numeric_addendum_state": "FROZEN" if validate_ok else "NOT_FROZEN",
         "sci_val_selection_was_dry_run": sci_was_dry,

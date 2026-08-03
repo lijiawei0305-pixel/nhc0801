@@ -39,9 +39,9 @@ def main() -> int:
 
     if backend == "gpu":
         # Must not multi-GPU one process; caller pins CUDA_VISIBLE_DEVICES to one id.
-        from gpu4pyscf import dft as dft_mod  # type: ignore
+        from gpu4pyscf import dft as dft_mod
     else:
-        from pyscf import dft as dft_mod  # type: ignore
+        from pyscf import dft as dft_mod
 
     def _build_mf(mol_obj: Any) -> Any:
         """Parent P01: xc must be compound 'wb97m-d3bj' (plain wb97m missing on gpupyscf).

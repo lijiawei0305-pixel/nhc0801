@@ -18,7 +18,7 @@ import os
 import signal
 import subprocess
 import time
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 NHC = Path(os.environ.get("NHC0801_ROOT", "/home/plab/test/WJW/NHC0801"))
@@ -32,7 +32,7 @@ POLL = int(os.environ.get("STEWARD_POLL_S", "60"))
 
 
 def utc() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def log(msg: str) -> None:

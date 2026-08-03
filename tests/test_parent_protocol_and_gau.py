@@ -15,9 +15,9 @@ from nhc_deprot.contracts.parent_protocol import (  # noqa: E402
     deprotonation_electronic_kcal,
 )
 from nhc_deprot.pipeline.parent_handoff import (  # noqa: E402
+    FAILED_PARENT_HANDOFF,
     HANDOFF_CALIBRATION_MISS,
     HANDOFF_CALIBRATION_PASS,
-    FAILED_PARENT_HANDOFF,
     classify_first_parent_gradient,
     load_gau_loose_profile,
 )

@@ -10,7 +10,6 @@ are missing. Resource affinity is the caller's responsibility.
 
 from __future__ import annotations
 
-import math
 from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
@@ -65,14 +64,15 @@ class LiveAimnet2GauLooseEngine:
         multiplicity: int,
         checkpoint_id: str,
     ) -> dict[str, Any]:
+        from aimnet.calculators import AIMNet2ASE
         from ase import Atoms
         from ase.optimize import LBFGS
-        from aimnet.calculators import AIMNet2ASE
 
         atoms = Atoms(symbols=list(elements), positions=np.asarray(coordinates, dtype=float))
         calc = AIMNet2ASE(str(self.weight_path), charge=charge, mult=multiplicity)
         atoms.calc = calc
-        opt = LBFGS(atoms, logfile=None)
+        # ASE typing marks logfile as IO|str; None is the documented quiet mode.
+        opt = LBFGS(atoms, logfile=None)  # type: ignore[arg-type]
         prev_e = None
         prev_pos = None
         steps = 0

@@ -17,9 +17,10 @@ from __future__ import annotations
 import io
 import math
 from collections import defaultdict
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Final, Mapping, cast
+from typing import Any, Final, cast
 
 import numpy as np
 
@@ -384,7 +385,7 @@ def audit_weighted_dataset(
             abs_tol=WEIGHT_ABS_TOL,
         )
         candidate_count_by_split[split] = candidate_count
-        split_weight_sums[split] = float(weight_audit["split_weight_sum"])
+        split_weight_sums[split] = float(cast(float | int | str, weight_audit["split_weight_sum"]))
         split_audits[split].frame_count = frame_count_by_split[split]
         split_audits[split].candidate_count = candidate_count
         split_audits[split].weight_sum = split_weight_sums[split]
@@ -508,7 +509,8 @@ def audit_public_weighted_result(
     scope = payload.get("scope")
     if not isinstance(scope, dict):
         raise DatasetError("result scope missing")
-    weighting = payload.get("weighting") if isinstance(payload.get("weighting"), dict) else {}
+    raw_weighting = payload.get("weighting")
+    weighting: dict[str, object] = raw_weighting if isinstance(raw_weighting, dict) else {}
     return {
         "status": "PASS",
         "schema": schema,

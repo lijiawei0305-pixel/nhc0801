@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import datetime, timezone
-from pathlib import Path
+from datetime import UTC, datetime
 from typing import Any, Final
 
 from nhc_deprot.data.io_util import write_json
@@ -68,7 +67,7 @@ def run_resource_claim(
     import secrets
 
     cid = claim_id or (
-        datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "_" + secrets.token_hex(3)
+        datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ") + "_" + secrets.token_hex(3)
     )
     receipt = {
         "schema": CLAIM_RECEIPT_SCHEMA,
@@ -91,7 +90,7 @@ def run_resource_claim(
             "read-only sampling; no PySCF/AIMNet2/train started",
             "PASS claim does not open teacher_pyscf_authorized / epoch0_execution",
         ],
-        "created_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "created_at_utc": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
 
     layout.resources_dir.mkdir(parents=True, exist_ok=True)
@@ -140,7 +139,7 @@ def evaluate_injected_samples(
         "dual_escalation_permitted": result.dual_escalation_permitted,
         "samples": [snapshot_to_dict(s) for s in samples],
         "notes": ["injected samples; no host access"],
-        "created_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "created_at_utc": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     layout.resources_dir.mkdir(parents=True, exist_ok=True)
     write_json(layout.resource_claim_path(claim_id), receipt, overwrite=True)

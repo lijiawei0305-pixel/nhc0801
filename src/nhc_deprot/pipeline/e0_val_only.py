@@ -17,11 +17,10 @@ from __future__ import annotations
 
 import argparse
 import json
-import sys
+from collections.abc import Sequence
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Sequence
 
 from nhc_deprot.contracts.parent_protocol import (
     CATION_CHARGE,
@@ -49,7 +48,7 @@ class E0ValOnlyError(RuntimeError):
 
 
 def _utc() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def normalize_epoch0_batch_id(batch_id: str) -> str:
@@ -96,11 +95,14 @@ def load_geo(root_id: str, endpoint: str, gold_dirs: Sequence[Path]) -> FrozenEn
         if endpoint == "cation"
         else (NEUTRAL_CHARGE, NEUTRAL_MULTIPLICITY)
     )
+    xyz_coords = tuple(
+        (float(row[0]), float(row[1]), float(row[2])) for row in coords
+    )
     return FrozenEndpointGeometry(
         root_id=root_id,
         endpoint=endpoint,
         elements=tuple(elements),
-        coordinates=tuple(tuple(c) for c in coords),
+        coordinates=xyz_coords,
         charge=charge,
         multiplicity=mult,
         geometry_sha256="",

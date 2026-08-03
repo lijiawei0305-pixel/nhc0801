@@ -2,12 +2,9 @@
 
 from __future__ import annotations
 
-import math
-
 import pytest
 
 from nhc_deprot.contracts.parent_protocol import PROTOCOL_SHA256, deprotonation_electronic_kcal
-from nhc_deprot.data.io_util import sha256_bytes
 from nhc_deprot.pipeline.parent_handoff import (
     FAILED_PARENT_HANDOFF,
     FINAL_PARENT_GAU_CONVERGED,

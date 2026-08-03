@@ -74,7 +74,10 @@ def main() -> int:
             notes=["demo"],
         )
     else:
-        feat = ModelCardFeatures(version=args.version, **{k: v for k, v in metrics.items() if hasattr(ModelCardFeatures, k)})  # type: ignore[arg-type]
+        feat = ModelCardFeatures(
+            version=args.version,
+            **{k: v for k, v in metrics.items() if hasattr(ModelCardFeatures, k)},
+        )
 
     paths = write_model_card(layout, feat, overwrite=True)
     print(json.dumps(paths, indent=2))

@@ -6,8 +6,9 @@ starts chemistry. Strategy S: evaluate gates for a selected profile.
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
-from typing import Any, Final, Mapping, Sequence
+from typing import Any, Final
 
 from nhc_deprot.resources.profiles import ResourceProfile, get_profile
 

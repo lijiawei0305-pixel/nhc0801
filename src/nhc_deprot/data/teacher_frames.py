@@ -11,9 +11,10 @@ Frame *counts* are never assumed (no 235 magic number).
 
 from __future__ import annotations
 
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, Iterable
+from typing import Final
 
 from nhc_deprot.data.errors import DatasetError
 from nhc_deprot.data.paths import (

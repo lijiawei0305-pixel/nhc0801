@@ -15,8 +15,7 @@ import json
 import os
 import sys
 import traceback
-from concurrent.futures import ProcessPoolExecutor, as_completed
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,13 +35,12 @@ from nhc_deprot.pipeline.live_teacher import LiveParentTeacherEngine  # noqa: E4
 from nhc_deprot.pipeline.pipeline_status import write_step_status  # noqa: E402
 from nhc_deprot.pipeline.teacher_runner import (  # noqa: E402
     run_root_teacher,
-    run_teacher_campaign,
 )
 from nhc_deprot.resources.profiles import get_profile, worker_env_for_profile  # noqa: E402
 
 
 def _utc() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _apply_worker_env(*, threads: int = 8) -> None:
@@ -302,11 +300,6 @@ def main(argv: list[str] | None = None) -> int:
     report["finished_at_utc"] = _utc()
     write_json(layout.logs_dir / "live_side_mindmap_report.json", report, overwrite=True)
     print(json.dumps(report, indent=2, sort_keys=True), flush=True)
-    teacher_ok = report.get("teacher", {}).get("status") in {
-        "LIVE_TEACHER_PASS",
-        "LIVE_TEACHER_PARTIAL",
-        None,
-    }
     # PARTIAL still exit 0 if any progress; FAIL only if teacher hard-failed all
     if report.get("teacher", {}).get("status") == "FAIL":
         return 1

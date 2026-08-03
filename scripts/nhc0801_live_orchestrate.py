@@ -16,7 +16,7 @@ import json
 import os
 import sys
 import traceback
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -38,17 +38,16 @@ from nhc_deprot.pipeline.scientific_validation import FrozenEndpointGeometry  # 
 from nhc_deprot.resources.claim_runner import run_resource_claim  # noqa: E402
 from nhc_deprot.training.config import TrainingConfig  # noqa: E402
 from nhc_deprot.training.live_aimnet2 import LiveAimnet2TrainBackend  # noqa: E402
-from nhc_deprot.training.multi_seed_trainer import run_multi_seed_training  # noqa: E402
 
 
 def _load_xyz(path: Path) -> FrozenEndpointGeometry:
-    from nhc_deprot.pipeline.live_epoch0 import load_xyz
     from nhc_deprot.contracts.parent_protocol import (
         CATION_CHARGE,
         CATION_MULTIPLICITY,
         NEUTRAL_CHARGE,
         NEUTRAL_MULTIPLICITY,
     )
+    from nhc_deprot.pipeline.live_epoch0 import load_xyz
 
     # path name: KEY_cation.xyz
     name = path.name
@@ -60,11 +59,14 @@ def _load_xyz(path: Path) -> FrozenEndpointGeometry:
         if endpoint == "cation"
         else (NEUTRAL_CHARGE, NEUTRAL_MULTIPLICITY)
     )
+    xyz_coords = tuple(
+        (float(row[0]), float(row[1]), float(row[2])) for row in coords
+    )
     return FrozenEndpointGeometry(
         root_id=root_id,
         endpoint=endpoint,
         elements=tuple(elements),
-        coordinates=tuple(tuple(c) for c in coords),
+        coordinates=xyz_coords,
         charge=charge,
         multiplicity=mult,
         geometry_sha256="",
@@ -88,7 +90,12 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--skip-epoch0-live", action="store_true")
     parser.add_argument("--skip-train-live", action="store_true")
-    parser.add_argument("--train-epochs", type=int, default=None, help="Override epochs (default 200)")
+    parser.add_argument(
+        "--train-epochs",
+        type=int,
+        default=None,
+        help="Override epochs (default 200)",
+    )
     parser.add_argument("--seeds", type=str, default="20260730,20260731,20260732")
     parser.add_argument("--claim-interval-s", type=float, default=3.0)
     parser.add_argument(
@@ -124,7 +131,7 @@ def main(argv: list[str] | None = None) -> int:
         ensure_generation_tree(layout, exist_ok=True)
 
     report: dict = {
-        "started_at_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "started_at_utc": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
         "generation_id": layout.generation_id,
         "gpu_index": args.gpu_index,
     }
@@ -147,7 +154,11 @@ def main(argv: list[str] | None = None) -> int:
     claim_pass = claim["status"] == "LIVE_RESOURCE_CLAIM_PASS"
     if not claim_pass:
         # GPU-only train can continue if explicitly allowed (CPU may be used by epoch0)
-        if args.skip_epoch0_live and args.allow_train_without_cpu_claim and not args.skip_train_live:
+        if (
+            args.skip_epoch0_live
+            and args.allow_train_without_cpu_claim
+            and not args.skip_train_live
+        ):
             report["claim_note"] = "CPU claim failed; proceeding GPU train only by flag"
         elif (
             args.skip_train_live
@@ -309,7 +320,7 @@ def main(argv: list[str] | None = None) -> int:
     else:
         report["train"] = {"status": "SKIPPED"}
 
-    report["finished_at_utc"] = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    report["finished_at_utc"] = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     write_json(layout.logs_dir / "live_orchestrate_report.json", report, overwrite=True)
     print(json.dumps(report, indent=2, sort_keys=True))
     e0_ok = report.get("epoch0", {}).get("status") in {
