@@ -10,11 +10,15 @@ from nhc_deprot.resources.claim import (
 from nhc_deprot.resources.profiles import (
     DUAL_CANDIDATE,
     OFFICIAL_DEFAULT,
+    OFFICIAL_DEFAULT_V002,
     ResourceProfile,
     assert_profile_allowed_for_chemistry,
     default_collection_profile_id,
+    default_v002_profile_id,
     get_profile,
     load_profile_catalog,
+    load_v002_catalog,
+    worker_env_for_profile,
 )
 from nhc_deprot.resources.worker_pool import (
     WorkerPool,
@@ -33,6 +37,7 @@ __all__ = [
     "DUAL_CANDIDATE",
     "HostSnapshot",
     "OFFICIAL_DEFAULT",
+    "OFFICIAL_DEFAULT_V002",
     "ResourceProfile",
     "WorkerPool",
     "assert_profile_allowed_for_chemistry",
@@ -41,9 +46,12 @@ __all__ = [
     "claim_next_root",
     "complete_root",
     "default_collection_profile_id",
+    "default_v002_profile_id",
     "evaluate_claim",
     "get_profile",
     "load_profile_catalog",
+    "load_v002_catalog",
     "pilot_v002_busy_samples",
     "progress_summary",
+    "worker_env_for_profile",
 ]

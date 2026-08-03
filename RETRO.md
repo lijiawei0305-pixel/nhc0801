@@ -202,3 +202,21 @@
 | --- | --- |
 | 2026-08-01 | 初创：从 NHC0801 冷启动～sci-val writer 会话提炼 A–G 条目 |
 | 2026-08-01 | 追加 H：generation + resource 模型（C/S，无 live） |
+
+### R-gpu-autofill-zombie-reap. `[已解决]` 空闲 GPU 不补位
+
+- **现象**: 作业已 `JOB_EXIT PASS`，nvidia-smi 卡空，但 autofill 长时间 `free_gpus=[]` 不 CLAIM。
+- **根因**: `running` 用 `os.kill(pid,0)` 判活；僵尸进程 Z 仍返回成功，假占用 GPU。
+- **方案**: 读 `/proc/pid/status` 将 Z 视为结束；日志有 `JOB_EXIT` 即 reap；`compute_steward.py` 周期强制 reap + 重启守护。
+- **权威**: `docs/contracts/COMPUTE_DISPATCH_V001.md`；守护 `scripts/nhc0801_gpu_autofill_daemon.py` / `nhc0801_compute_steward.py`。
+
+### R-e0-handoff-grad-key. `[已解决]` g002 Epoch-0 Val 全 FAILED_PARENT_HANDOFF
+
+- **现象**: g002 Epoch-0 两根 Val、四个 endpoint 全 `FAILED_PARENT_HANDOFF` + `ANALYTIC_GRADIENT_UNAVAILABLE`；pure-PySCF 参考路线 PASS；AIMNet2 预优化也做过。
+- **根因**: **字段名不一致**，不是分子算不动。  
+  - worker `nhc0801_pyscf_parent_worker.py` → `gradient_hartree_per_bohr`  
+  - sci-val 读 `first.get("gradient_hartree_bohr")`（仿真引擎键名）  
+  → 梯度实际有，被当成 None → 误判 handoff 失败。pure 路径不跑 first_gradient 检查，故纯 Parent 能过。
+- **方案**: `scientific_validation` 双键兼容；`LiveParentP01Engine.first_gradient` 归一化为 `gradient_hartree_bohr`。单测覆盖。**已跑完的 g002 收据不会自动变好**，需用修后代码重跑 g002 Epoch-0。g003+ 若在修前已进入 first_grad 同样会中招，rsync 后重启队列。
+- **权威**: `src/nhc_deprot/pipeline/scientific_validation.py` · `live_epoch0.py`。
+

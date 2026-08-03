@@ -451,6 +451,11 @@ def run_endpoint_route(
             charge=charge,
             multiplicity=mult,
         )
+        # Worker uses gradient_hartree_per_bohr; simulated engines use gradient_hartree_bohr.
+        # Accept either key (g002 Epoch-0 false ANALYTIC_GRADIENT_UNAVAILABLE was a key mismatch).
+        grad = first.get("gradient_hartree_bohr")
+        if grad is None:
+            grad = first.get("gradient_hartree_per_bohr")
         classification = classify_first_parent_gradient(
             profile=profile,
             scf_converged=bool(first.get("scf_converged")),
@@ -459,7 +464,7 @@ def run_endpoint_route(
                 if first.get("energy_hartree") is not None
                 else None
             ),
-            gradient_hartree_bohr=first.get("gradient_hartree_bohr"),  # type: ignore[arg-type]
+            gradient_hartree_bohr=grad,  # type: ignore[arg-type]
             coordinates_finite=bool(first.get("coordinates_finite", True)),
             atom_identity_preserved=bool(first.get("atom_identity_preserved", True)),
             charge_multiplicity_preserved=bool(

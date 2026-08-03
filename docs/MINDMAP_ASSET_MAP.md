@@ -4,15 +4,15 @@ How each `mindmap.md` stage maps to material available after bootstrap.
 
 | Step | Mindmap | Available now | Gap / next work |
 | --- | --- | --- | --- |
-| 0 | Freeze molecular roots | Partial: labels + gold tables identify molecules; few validated XYZ (ranker Phase 7 smoke only, not bulk) | Define root schema; generate/freeze initial geometries for chosen roots |
-| 1 | Train/Val/Test by root | **Not defined** | Write split protocol; freeze key lists |
-| 2 | Pure-PySCF teacher frames | Contracts in `docs/extracted/ranker/PYSCF_*`, `SCIENCE_SCOPE` | Implement teacher runner under NHC0801; no frames yet |
-| 3 | Epoch-0 baseline | Official weight hash known; handoff contract docs | Run assisted path after teacher refs exist |
-| 4–5 | Train AIMNet2 + checkpoints | Legacy training YAML extract; historical ckpts on server (read-only) | New training code + versioned checkpoint dir **inside NHC0801** |
-| 6–7 | Fast val + shortlist | — | Val frame set from step 2 |
-| 8–9 | Full scientific val + selection | Promotion-gate ideas in ranker `AIMNET2_PROMOTION_GATES.md` (adapt, do not copy ranks) | Preregister selection rules **before** looking at Test |
-| 10 | Freeze | — | Manifests + SHA256 |
-| 11–12 | Final Test sealed | — | One-shot only |
+| 0 | Freeze molecular roots | Pilot 3+2 roots in `data/paths` + generation meta | Larger root freeze when scale-up |
+| 1 | Train/Val/Test by root | `development_split` + sealed FT commitment | Keep FT sealed; no identity open |
+| 2 | Pure-PySCF teacher frames | `teacher_runner` dry-run + pilot 235-frame bind | Live teacher gen when authorized |
+| 3 | Epoch-0 baseline | Dry-run + **live parent worker** (`wb97m-d3bj`); `check_epoch0_receipts` | After live finish: audit campaign + root receipts |
+| 4–5 | Train AIMNet2 + checkpoints | **Live train PASS** g001 3×200; `.pt` last-epoch | Export shortlist `.pt`s if sci-val needs mid epochs |
+| 6–7 | Fast val + shortlist | Trainer quick-val + `checkpoint_shortlist` campaign | Run shortlist on server g001 train |
+| 8–9 | Full scientific val + selection | Writer + `sci_val_campaign` dry-run; numeric cal frozen | Live sci-val after e0 + shortlist weights |
+| 10 | Freeze | `freeze_package` (PROVISIONAL until live selection) | Hard freeze only after live VALIDATION_SELECTED |
+| 11–12 | Final Test sealed | Commitment only; readiness gate | One-shot; not authorized |
 
 ## Recommended directory layout (server + local)
 
@@ -26,7 +26,7 @@ NHC0801/
     labels/           # small tables (present)
     roots/            # frozen molecular roots (TODO)
     splits/           # train/val/test key lists (TODO)
-    teacher/          # pure-pyscf frames (TODO)
+    teacher_gpu_g001/ # pure-pyscf frames (g001 teacher; g00N → teacher_gpu_g00N/)
     geometries/       # initial XYZ (TODO)
   models/
     official/         # pointers / copies of epoch-0 weight metadata

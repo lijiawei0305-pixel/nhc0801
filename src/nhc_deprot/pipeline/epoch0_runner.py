@@ -13,8 +13,9 @@ Scientific identity:
       → compare to Pure-PySCF reference on same roots
 
 Default dry_run=True uses SimulatedAimnet2/Parent engines and writes receipts
-under generation ``epoch0/``. Live chemistry requires ``epoch0_execution=True``
-and injected non-dry engines (not provided here).
+under ``layout.epoch0_dir`` (canonical: ``epoch0_val_batches/g001/epoch0/`` for
+g001 Epoch-0; other batches use ``epoch0_val_batches/g00N/epoch0/``).
+Live chemistry requires ``epoch0_execution=True`` and injected non-dry engines.
 
 Never opens Final Test. Never uses historical finetuned checkpoints as epoch-0.
 """

@@ -49,3 +49,8 @@ def test_teacher_paths(tmp_path: Path) -> None:
     layout = resolve_layout(nhc0801_root=tmp_path / "NHC0801")
     p = layout.teacher_endpoint_dir("ROOT-A", "cation")
     assert p.parts[-2:] == ("ROOT-A", "cation")
+    # uniform group dirs: teacher_gpu_g001 / teacher_gpu_g002 / …
+    assert layout.teacher_dir.name == "teacher_gpu_g001"
+    assert layout.teacher_batch_dir("g001") == layout.teacher_dir
+    assert layout.teacher_batch_dir("g002").name == "teacher_gpu_g002"
+    assert layout.teacher_batch_dir("g003").name == "teacher_gpu_g003"

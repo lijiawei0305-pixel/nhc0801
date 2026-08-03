@@ -10,14 +10,16 @@ Not a continuation of `nhc-deprot-ranker` Phase 9B. Not production `two_endpoint
 ## Before any code change
 
 1. Read **`mindmap.md`** + this file + **`PHASE_STATUS.md`**.
-2. Skim **`RETRO.md`** for similar past failures (same category).
-3. Map work to a **mindmap step 0–12**. Do not skip gates.
-4. If the task is non-trivial: write a short plan under **`docs/plans/`** *before* vibe coding.
-5. Put new files only where **Where to put files** allows.
-6. Run `PYTHONPATH=src python -m pytest -q` after code changes.
-7. Live chemistry / training / Final Test only with **explicit user authorization**.
+2. If the task touches **CPU/GPU 波次、10 endpoints、teacher/e0 调度、双代数据归属**：read **`docs/contracts/COMPUTE_DISPATCH_V001.md`** (mandatory).
+3. If the task touches **核数/绑核/内存 profile**：read **`docs/contracts/RESOURCE_SCHEDULING_V001.md`** + **`docs/contracts/RESOURCE_PROFILES_V002.yaml`**.
+4. Skim **`RETRO.md`** for similar past failures (same category).
+5. Map work to a **mindmap step 0–12**. Do not skip gates.
+6. If the task is non-trivial: write a short plan under **`docs/plans/`** *before* vibe coding.
+7. Put new files only where **Where to put files** allows.
+8. Run `PYTHONPATH=src python -m pytest -q` after code changes.
+9. Live chemistry / training / Final Test only with **explicit user authorization**.
 
-Conflict order: **mindmap.md** → frozen YAML/JSON → this file → `RETRO.md` lessons → pilot evidence.
+Conflict order: **mindmap.md** → **`docs/contracts/COMPUTE_DISPATCH_V001.md`** (compute dispatch) → other frozen YAML/JSON contracts → this file → `RETRO.md` lessons → pilot evidence.
 
 ---
 
@@ -29,7 +31,7 @@ Conflict order: **mindmap.md** → frozen YAML/JSON → this file → `RETRO.md`
 | **单元测试** | `tests/` | `test_<topic>.py`；合成 fixture，不依赖 HPC |
 | **CLI / 作业入口** | `scripts/` | 薄封装 only；逻辑在 `src/`。见 `scripts/README.md` |
 | **动手前的规划** | `docs/plans/` | `YYYYMMDD_<topic>_plan.md`。见 `docs/plans/README.md` |
-| **冻结合同** | `docs/contracts/` | 版本化 YAML/JSON（GAU_LOOSE、数值标定等） |
+| **冻结合同** | `docs/contracts/` | 版本化 YAML/JSON/MD（GAU_LOOSE、数值标定、**COMPUTE_DISPATCH**、RESOURCE_* 等） |
 | **科学讨论 / 阻塞说明** | `docs/science/` | 非合同正文 |
 | **pilot 证据（改名后）** | `docs/evidence/` | 只读绑定；勿再堆 phase9b 文件名 |
 | **禁止栈 / 历史干扰** | `docs/archive/` | 只读隔离，不当协议源 |
@@ -38,8 +40,10 @@ Conflict order: **mindmap.md** → frozen YAML/JSON → this file → `RETRO.md`
 | **科学流水线真值** | `mindmap.md` | 根目录；改口径先改它 |
 | **协作者入口** | `README.md` | 中文学术说明；勿替代 mindmap |
 | **私人配置** | `configs/*.local.yaml`, `private/` | **永不提交** |
-| **运行产物** | `runs/`（服务器 `$WJW/NHC0801/runs/<generation>/`） | generation 用 `nhc0801-g001`；见 `generation/layout.py` |
-| **资源档案** | `docs/contracts/RESOURCE_PROFILES_V001.yaml` | parallel S：single 默认；dual 需 claim+收据 |
+| **运行产物** | `runs/`（服务器 `$WJW/NHC0801/runs/<generation>/`） | generation 用 `nhc0801-g001`；**分子组产物**见下节 **Experimental data naming** |
+| **资源档案** | `docs/contracts/RESOURCE_PROFILES_V002.yaml` | 默认 trial `auto_fill_112_t10_r12_v1`（见 SCHEDULING）；V001 保留兼容 |
+| **计算调度合同** | `docs/contracts/COMPUTE_DISPATCH_V001.md` | 10-ep 波次、分子组 g00N、路径隔离 |
+| **命名词典** | `docs/NHC0801_命名与进度指南.md` | 对人说法 + 查进度；与本节一致 |
 | **临时草稿** | **禁止长期放仓库根** | 用完删，或迁入 `docs/plans/` / `RETRO.md` |
 
 **禁止：**
@@ -48,6 +52,74 @@ Conflict order: **mindmap.md** → frozen YAML/JSON → this file → `RETRO.md`
 - 把库逻辑只写在 `scripts/` 而不进 `src/`  
 - 把规划写进 `src/` 或把合同写进 `RETRO.md`  
 - 修改 ranker / science-pilot 源树或 `$WJW` 非 NHC0801 路径  
+- **实验数据乱命名**（见下节）：禁止新写 `teacher/`、`teacher_gpu_side/`、顶层特殊 `epoch0/`、对外称「Autofill 批」  
+
+---
+
+## Experimental data naming（实验计算数据命名 · 硬规则）
+
+**原则：** 每一次实验计算产物必须 **组号清晰、目录与组号同构、对人说法与磁盘一致**。  
+**实现入口：** `src/nhc_deprot/generation/layout.py`（`teacher_batch_dir` / `epoch0_batch_dir`）。  
+**词典：** `docs/NHC0801_命名与进度指南.md`。
+
+### 1) 分子组 `g00N`（唯一用户可见批名）
+
+| 项 | 规则 |
+| --- | --- |
+| 组名 | **`g001`、`g002`、`g003`、…** 顺序编号，禁止自造别名当产品名 |
+| 规模 | **5 molecular roots** = **3 Train + 2 Val**（InChIKey 字典序：前 3 训、后 2 验） |
+| 端点 | **10** = 5 × (cation + neutral) |
+| 对人说 | **「g003 teacher」** / **「g003 Epoch-0」** — 禁止说「Autofill 第 3 批」「扩展批」「侧线」当正式名 |
+
+### 2) 产物目录（规范 · 禁止例外）
+
+| 工作 | 标准名（对人） | **唯一规范磁盘路径**（在 `runs/<generation>/` 下） |
+| --- | --- | --- |
+| 老师帧 | **g00N teacher** | **`teacher_gpu_g00N/`** |
+| Epoch-0 基线 | **g00N Epoch-0** | **`epoch0_val_batches/g00N/`**（其下可有 `epoch0/`、`logs/`） |
+| generation 总目录 | — | **`runs/nhc0801-g001/`**（勿简写成 `runs/g001/`） |
+
+**强制同构示例：**
+
+```text
+teacher_gpu_g001/     ← g001 teacher（含 pilot；不要再叫 teacher/）
+teacher_gpu_g002/     ← g002 teacher（不要再叫 teacher_gpu_side/）
+teacher_gpu_g003/     ← g003 teacher
+epoch0_val_batches/g001/   ← g001 Epoch-0
+epoch0_val_batches/g002/   ← g002 Epoch-0
+```
+
+### 3) 目录 / 收据内部字段
+
+- 收据 JSON 必须可定位组号：含 **`batch_id`**（`g00N`）和/或写在 **规范路径** 下。  
+- 禁止同一科学对象多套「官方」路径并存写；兼容旧路径时 **只允许只读 fallback 或 symlink**，新写只进规范路径。  
+- 日志/回执文件名优先带组号：如 `job_g003.out`、`g003_epoch0_val_receipt.json`；避免仅 `02c` / `side` 当唯一身份。
+
+### 4) 工程模块名 vs 产品名（必须分清）
+
+| 工程标识（可留在代码/state） | 对外 / 产品命名（必须用 g00N） |
+| --- | --- |
+| 模块 `gpu_autofill`、目录 `gpu_autofill/`、脚本 `*_gpu_autofill_daemon.py` | **g00N teacher** / 切组队列 |
+| 资源 profile 名 `auto_fill_112_*` | 资源档案名，**不是**分子组名 |
+| 历史 `$WJW/data/runs/autofill_*_v001` | **只读旧 pilot 帧**，新 NHC0801 产物禁止新写该布局 |
+
+### 5) 废除名（不得再作为规范产品路径或对人主称）
+
+| 废除 | 改用 |
+| --- | --- |
+| `teacher/`（单独） | `teacher_gpu_g001/` |
+| `teacher_gpu_side/` | `teacher_gpu_g002/` |
+| `teacher_cpu/`、`teacher_gpu/`（无组号） | `teacher_gpu_g00N/` |
+| 顶层 `epoch0/` 作为 g001 专用规范位 | `epoch0_val_batches/g001/` |
+| 「Autofill 批 / 扩展批 / 侧线 e0」 | **g00N** / **g00N Epoch-0** |
+| `runs/g001/` | `runs/nhc0801-g001/` |
+
+### 6) 写代码 / 写文档时的自检
+
+1. 新产物路径是否含 **`g00N` 组号**？  
+2. teacher 是否落在 **`teacher_gpu_g00N/`**？Epoch-0 是否落在 **`epoch0_val_batches/g00N/`**？  
+3. 对人说明是否 **零 Autofill / 零 side / 零无名 teacher/**？  
+4. 合同、计划、TUI、脚本 help 是否与上表一致？（改路径必改合同或升版）
 
 ---
 
@@ -58,7 +130,7 @@ Conflict order: **mindmap.md** → frozen YAML/JSON → this file → `RETRO.md`
 | `docs/plans/*` | **写代码前**（多步任务、改科学口径、新模块） |
 | `RETRO.md` | 踩坑后追加；同类问题先查再改 |
 | `PHASE_STATUS.md` | 阶段完成或阻塞变化时 |
-| `docs/contracts/*` | 冻结/升版合同时（需用户确认若改科学阈值） |
+| `docs/contracts/*` | 冻结/升版合同时（需用户确认若改科学阈值）；计算调度见 `COMPUTE_DISPATCH_V001.md` |
 | `README.md` | 对外说明 mindmap 与用法；保持学术中文主叙述 |
 | `AGENTS.md` | 仅增删**可执行规则**；不贴长文交接 |
 
@@ -120,6 +192,35 @@ modify_wjw_outside_NHC0801 / scheduler_submission
 ```
 
 允许：本地代码·测试·文档；只读 SSH；rsync **进** NHC0801（无 `--delete`）。
+
+---
+
+## Compute dispatch（短规则 · 细节见合同）
+
+权威全文：**`docs/contracts/COMPUTE_DISPATCH_V001.md`**。此处仅可执行摘要：
+
+| 规则 | 内容 |
+| --- | --- |
+| 波次大小 | **固定 10 endpoints** = 5 roots × (cation+neutral) |
+| CPU 波 | **g001 pilot** Train3+Val2；正线 teacher / g001 训练只认 **Train3** |
+| 分子组 | **g00N** = 5 roots = 3 Train + 2 Val；见 **Experimental data naming** |
+| teacher 产物 | **`teacher_gpu_g00N/`** 唯一规范（含 g001/g002） |
+| Epoch-0 产物 | **`epoch0_val_batches/g00N/`**；Parent/handoff **默认 GPU**（gpu4pyscf，与 AIMNet2 同卡、无 VASP） |
+| 归属 | g002+ 来自池切组；**禁止**并入 g001 训练标签 |
+| g003+ 切组队列 | 守护 **`scripts/nhc0801_gpu_teacher_daemon.py`**（旧名 `*_gpu_autofill_daemon` 仅兼容包装）；状态 **`gpu_teacher_queue/state.json`**；日志标签 **`[gpu-teacher]`**；对外只报 **g00N** |
+| 并存 | CPU+GPU 默认可并存，但 **每次须用户确认**；路径与 GPU 卡启动前检查 |
+| 训练 | AIMNet2 **仅 CUDA 正线**；只认 g001 **Train3** 老师帧（当前正线） |
+| xc | 必须 `wb97m-d3bj` |
+
+### 遇问题读哪个文件
+
+| 问题 | 必读 |
+| --- | --- |
+| 步骤能否做 / 科学口径 | `mindmap.md` → `COMPUTE_DISPATCH_V001.md` §5 → `PHASE_STATUS.md` |
+| CPU/GPU、10-ep、双波、g001 vs g002 数据 | **`COMPUTE_DISPATCH_V001.md`** |
+| 核/内存/profile | `RESOURCE_SCHEDULING_V001.md` + `RESOURCE_PROFILES_V002.yaml` |
+| 踩坑 | `RETRO.md` |
+| 选模阈值 | `NUMERIC_CALIBRATION_V001.yaml` |
 
 ---
 

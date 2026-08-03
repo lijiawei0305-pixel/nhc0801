@@ -1,6 +1,8 @@
 # Phase Status — NHC0801
 
-Updated: 2026-08-01 (scientific Validation writer + README + GitHub)
+Updated: 2026-08-03
+
+**看不懂 g001 / e0 / Val-only？** → 读 **`docs/NHC0801_命名与进度指南.md`**（命名词典 + 查进度命令 + 快照）。
 
 | Phase | Status | Notes |
 | --- | --- | --- |
@@ -8,11 +10,54 @@ Updated: 2026-08-01 (scientific Validation writer + README + GitHub)
 | P0.1–P0.4 | Complete | Handoff port, dataset reader, numeric cal, orchestrator |
 | P0.5 Sci-Val writer | Complete | `pipeline/scientific_validation.py` (live engines gated) |
 | P1 Freeze roots + split | Partial | Pilot 3+2 + sealed FT |
-| P2 Teacher Pure-PySCF | Not started (pilot data exists) | Live gen needs auth |
-| P3 Epoch-0 baseline | Dry-run ready | `pipeline/epoch0_runner.py`; live NOT_RUN |
-| P4 AIMNet2 training | Dry-run ready | multi_seed_trainer; live needs auth + backend |
-| P5 Sci Validation / select | Writer ready | Live route needs engines + gate |
-| P6 Freeze + Final Test | Not started | Sealed |
+| P2 Teacher Pure-PySCF | Pilot bound | 235-frame weighted pilot reused under g001 |
+| P3 Epoch-0 baseline | **LIVE RUNNING** | Parent P01 `wb97m-d3bj`; **must audit receipts on finish** |
+| P4 AIMNet2 training | **LIVE_TRAIN_PASS** | 3 seeds × 200 ep; `.pt` under `g001/train/seed_*` |
+| P5 Sci Validation / select | **Dry-run ready** | shortlist campaign + sci_val dry; live gated |
+| P6 Freeze + Final Test | **PROVISIONAL freeze** | `freeze_manifest`; Final Test still sealed |
+
+## Live dual-path (2026-08-02)
+
+| Track | Resource | Status |
+| --- | --- | --- |
+| Multi-seed train | GPU0, mlff, OMP=4 | **PASS** (~5 min wall for 3×200) |
+| Epoch-0 | GPU1 (AIMNet2) + CPU OMP=12 gpupyscf | **RUNNING** (parent DFT slow) |
+| Claim | single_27_physical_v1 | PASS before e0 relaunch |
+
+Artifacts:
+
+- `runs/nhc0801-g001/train/campaign_receipt_live.json` → `LIVE_TRAIN_PASS`
+- `runs/nhc0801-g001/train/seed_{20260730,20260731,20260732}/epoch_0200.pt`
+- `runs/nhc0801-g001/sci_val/shortlist_campaign.json` → 12 candidates (weights_present=3 last-epoch)
+- `runs/nhc0801-g001/freeze/freeze_manifest.json` → `PROVISIONAL`
+- `runs/nhc0801-g001/logs/live_epoch0.out` (monitor)
+- **On epoch0 exit:** `python scripts/nhc0801_check_epoch0_receipts.py` → campaign + root receipts
+- Worker: `scripts/nhc0801_pyscf_parent_worker.py` (must use `wb97m-d3bj`, not plain `wb97m`)
+
+## Resource + automation design (docs only, 2026-08-02)
+
+| Doc | Role |
+| --- | --- |
+| `docs/contracts/RESOURCE_SCHEDULING_V001.md` | **02c trial**: t=10、预留 12 核(100–111)、8 GiB/端点、10 端点一波 |
+| `docs/contracts/RESOURCE_PROFILES_V002.yaml` | `auto_fill_112_t10_r12_v1` rev **2026-08-02c** |
+| `docs/plans/20260802_automation_tui_design.md` | mindmap 0–10 编排 + SSH 只读 TUI 30s |
+
+**Implemented (2026-08-02):**
+
+| Module | Role |
+| --- | --- |
+| `resources/profiles.py` | V001+V002 load; `auto_fill_112_t8_v1` |
+| `resources/auto_fill.py` | \(N=\min(N_{cpu},N_{mem})\) + 8-CPU endpoint slots |
+| `pipeline/pipeline_status.py` | scan/write `pipeline_status.json` |
+| `dashboard/tui.py` | SSH read-only TUI (30s / `--once`) |
+| CLIs | `nhc0801_tui.py`, `nhc0801_auto_fill_plan.py`, `nhc0801_pipeline_status.py` |
+
+```bash
+# on nhc614
+PYTHONPATH=src python3 scripts/nhc0801_tui.py --once
+PYTHONPATH=src python3 scripts/nhc0801_auto_fill_plan.py --idle-cpus 0-111 --mem-gib 230 --roots A,B
+PYTHONPATH=src python3 scripts/nhc0801_pipeline_status.py --nhc0801-root $PWD --write
+```
 
 ## Training readiness
 
@@ -22,9 +67,9 @@ Updated: 2026-08-01 (scientific Validation writer + README + GitHub)
 | FULL_SCIENTIFIC_VALIDATION_WRITER_… | **RESOLVED** (writer implemented; live gated) |
 | WEIGHTED_DEVELOPMENT_DATASET | RESOLVED (pilot evidence) |
 | SOURCE_COMMIT_NOT_FROZEN | **RESOLVED** at `fb5116a4dc6dc8cac55575f2eadde556a02d24c1` |
-| EPOCH_ZERO_… | OPEN |
-| LIVE_TRAINING_NOT_AUTHORIZED | OPEN (default) |
-| LIVE_RESOURCE_CLAIM | OPEN if CPUs busy |
+| EPOCH_ZERO_… | **IN PROGRESS** (live parent P01) |
+| LIVE_TRAINING_NOT_AUTHORIZED | **pilot live train done** (g001; not Final Test) |
+| LIVE_RESOURCE_CLAIM | PASS when CPUs idle |
 
 ## Gates still closed
 
@@ -55,7 +100,7 @@ teacher DFT / epoch-0 / AIMNet2 train / sci-val **live** / Final Test / write ou
 | --- | --- |
 | Module | `pipeline/teacher_runner.py` |
 | CLI | `scripts/nhc0801_teacher_runner.py` |
-| Mode | **dry-run default** → synthetic frames + receipts under `g001/teacher/` |
+| Mode | **dry-run default** → synthetic frames + receipts under `teacher_gpu_g001/` |
 | Pool | `worker_pool` root claims; cation→neutral per root |
 | Live | Closed (`teacher_pyscf_authorized` + non-dry engine required) |
 

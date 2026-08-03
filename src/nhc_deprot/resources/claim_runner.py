@@ -65,7 +65,11 @@ def run_resource_claim(
         result.chemistry_permitted and chemistry_authorized and result.status.endswith("PASS")
     )
 
-    cid = claim_id or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    import secrets
+
+    cid = claim_id or (
+        datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "_" + secrets.token_hex(3)
+    )
     receipt = {
         "schema": CLAIM_RECEIPT_SCHEMA,
         "claim_id": cid,

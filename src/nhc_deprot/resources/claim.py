@@ -73,10 +73,20 @@ def _eval_one(snapshot: HostSnapshot, gates: ClaimGates, profile: ResourceProfil
     if gates.selected_cpus_must_be_idle and snapshot.selected_cpus_busy:
         reasons.append("SELECTED_CPU_BUNDLE_BUSY")
     # Profile-aware memory floor: catalog min and aggregate budget + reserve
-    need = max(
-        gates.min_mem_available_bytes,
-        (profile.aggregate_memory_budget_mb + profile.host_memory_reserve_mb) * 1024 * 1024,
-    )
+    if profile.is_auto_fill:
+        # Need reserve + at least one endpoint budget
+        per = profile.memory_per_endpoint_mb or profile.pyscf_max_memory_mb_per_worker
+        need = max(
+            gates.min_mem_available_bytes,
+            (profile.host_memory_reserve_mb + per) * 1024 * 1024,
+        )
+    else:
+        need = max(
+            gates.min_mem_available_bytes,
+            (profile.aggregate_memory_budget_mb + profile.host_memory_reserve_mb)
+            * 1024
+            * 1024,
+        )
     if snapshot.mem_available_bytes < need:
         reasons.append("MEM_AVAILABLE_BELOW_FLOOR")
     if snapshot.memory_psi_avg10 > gates.memory_psi_avg10_max:
@@ -128,16 +138,22 @@ def evaluate_claim(
     ok = not all_reasons
     # Dual still needs separate calibration receipt; claim PASS only unlocks single by default
     dual_ok = ok and prof.profile_id == "dual_14_13_physical_v1"
+    chem_ok = ok and (
+        prof.profile_id == "single_27_physical_v1"
+        or prof.is_auto_fill
+        or prof.profile_id.startswith("legacy_")
+    )
     return ClaimResult(
         status="LIVE_RESOURCE_CLAIM_PASS" if ok else "LIVE_RESOURCE_CLAIM_REJECTED",
         profile_id=prof.profile_id,
         sample_count=len(samples),
         reasons=all_reasons,
-        chemistry_permitted=ok and prof.profile_id == "single_27_physical_v1",
+        chemistry_permitted=chem_ok,
         dual_escalation_permitted=dual_ok,
         notes=[
             "chemistry_permitted applies only after user opens teacher/epoch0 gates",
             "dual requires isolated_benchmark selection receipt even if claim PASS",
+            "auto_fill V002: N=min(idle/t, mem) planned after claim; does not spawn chemistry",
         ],
     )
 

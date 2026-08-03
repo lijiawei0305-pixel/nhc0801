@@ -76,3 +76,29 @@ def test_handoff_miss_still_continues() -> None:
 def test_handoff_failed_stops() -> None:
     result = _base_ok(scf_converged=False)
     assert result["classification"] == FAILED_PARENT_HANDOFF
+
+
+def test_analytic_gradient_unavailable_when_missing() -> None:
+    result = _base_ok(gradient_hartree_bohr=None)
+    assert result["classification"] == FAILED_PARENT_HANDOFF
+    assert "ANALYTIC_GRADIENT_UNAVAILABLE" in (result.get("failure_types") or [])
+
+
+def test_worker_gradient_hartree_per_bohr_alias_is_usable() -> None:
+    """Live worker emits gradient_hartree_per_bohr; sci-val must accept it.
+
+    g002 Epoch-0 failed with ANALYTIC_GRADIENT_UNAVAILABLE solely because the
+    reader only looked for gradient_hartree_bohr (simulated-engine key).
+    """
+    worker_payload = {
+        "scf_converged": True,
+        "energy_hartree": -1000.0,
+        "gradient_hartree_per_bohr": ((0.0, 0.0, 0.0), (0.0, 0.0, 0.0)),
+        # deliberately omit gradient_hartree_bohr
+    }
+    grad = worker_payload.get("gradient_hartree_bohr")
+    if grad is None:
+        grad = worker_payload.get("gradient_hartree_per_bohr")
+    result = _base_ok(gradient_hartree_bohr=grad)
+    assert result["classification"] == HANDOFF_CALIBRATION_PASS
+    assert result.get("continue_same_parent_optimization") is True

@@ -16,8 +16,15 @@ DEFAULT_NHC0801: Final = DEFAULT_WJW / "NHC0801"
 DEFAULT_GENERATION_ID: Final = "nhc0801-g001"
 GENERATION_RUNS_RELATIVE: Final = Path("runs") / DEFAULT_GENERATION_ID
 
-# V004 pilot teacher frames (read-only shared runs; legacy binding)
-AUTOFILL_ROOT_TEMPLATE: Final = "autofill_{candidate_lower}_v001"
+# ---------------------------------------------------------------------------
+# LEGACY READ-ONLY — V004 / phase9b shared pilot frames under $WJW/data/runs
+# Do NOT write new NHC0801 products here. New teacher frames go to
+# runs/nhc0801-g001/teacher_gpu_g00N/ (see AGENTS.md Experimental data naming).
+# The name "autofill_*" is historical server layout, not a molecular group name.
+# ---------------------------------------------------------------------------
+LEGACY_V004_TEACHER_ROOT_TEMPLATE: Final = "autofill_{candidate_lower}_v001"
+# Back-compat alias (imports / tests)
+AUTOFILL_ROOT_TEMPLATE: Final = LEGACY_V004_TEACHER_ROOT_TEMPLATE
 FRAME_RELATIVE: Final = "training_data/{endpoint}/frame_{index:04d}.json"
 
 # V004 assembled products (read-only legacy; new products go to generation tree)
@@ -66,12 +73,21 @@ SERVER_XTB_CRUDE_CSV: Final = Path(
 MOL_GOLD_XYZ: Final = Path("data/runs/mol_gold/xyz")
 
 
+def legacy_v004_teacher_run_dir(runs_root: Path, candidate: str) -> Path:
+    """Path to historical V004 pilot teacher run (READ-ONLY on server)."""
+    return runs_root / LEGACY_V004_TEACHER_ROOT_TEMPLATE.format(
+        candidate_lower=candidate.lower()
+    )
+
+
 def autofill_run_dir(runs_root: Path, candidate: str) -> Path:
-    return runs_root / AUTOFILL_ROOT_TEMPLATE.format(candidate_lower=candidate.lower())
+    """Deprecated alias of :func:`legacy_v004_teacher_run_dir` (name is historical)."""
+    return legacy_v004_teacher_run_dir(runs_root, candidate)
 
 
 def frame_path(runs_root: Path, candidate: str, endpoint: str, index: int) -> Path:
-    return autofill_run_dir(runs_root, candidate) / FRAME_RELATIVE.format(
+    """Legacy V004 frame path under autofill_* layout (read-only binding)."""
+    return legacy_v004_teacher_run_dir(runs_root, candidate) / FRAME_RELATIVE.format(
         endpoint=endpoint, index=index
     )
 

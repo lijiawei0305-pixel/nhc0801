@@ -1,4 +1,9 @@
-"""Teacher-frame path conventions (Pure-PySCF P01 autofill layout).
+"""Teacher-frame path conventions for **legacy V004** Pure-PySCF P01 frames.
+
+These helpers point at historical ``$WJW/data/runs/autofill_*_v001`` trees
+(read-only inventory). New NHC0801 teacher products use
+``runs/nhc0801-g001/teacher_gpu_g00N/`` via generation layout — not this module.
+
 
 Read-only path resolution against $WJW runs. Does not load chemistry or run DFT.
 Frame *counts* are never assumed (no 235 magic number).

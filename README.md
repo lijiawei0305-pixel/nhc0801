@@ -191,6 +191,7 @@ Handoff 标定语义：
 mindmap.md                 # 科学流水线真值
 AGENTS.md                  # 代理 / 协作者约束
 PHASE_STATUS.md            # 阶段状态
+docs/NHC0801_命名与进度指南.md  # g001 / e0 / Val-only 等命名词典 + 如何读进度
 docs/contracts/            # GAU_LOOSE、数值标定等冻结合同
 docs/evidence/pilot_day1/  # 改名后的 pilot 证据（split / 加权集结果等）
 docs/archive/              # 禁止栈历史文档隔离区

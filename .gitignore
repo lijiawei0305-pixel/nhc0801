@@ -16,6 +16,7 @@ data/teacher/
 data/geometries/**
 !data/geometries/.gitkeep
 models/checkpoints/
+runs/
 runs/local_nhc0801/
 *.pt
 *.ckpt

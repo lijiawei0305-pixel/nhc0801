@@ -48,42 +48,49 @@ MINDMAP_IMPLEMENTATION: Final = {
         "title": "Epoch-0 baseline full route",
         "modules": [
             "nhc_deprot.pipeline.epoch0_runner",
+            "nhc_deprot.pipeline.live_epoch0",
+            "nhc_deprot.pipeline.epoch0_receipt_audit",
             "nhc_deprot.pipeline.scientific_validation",
             "nhc_deprot.pipeline.parent_handoff",
             "nhc_deprot.resources.profiles",
             "docs/contracts/GAU_LOOSE_V001.yaml",
             "scripts/nhc0801_epoch0_dry_run.py",
+            "scripts/nhc0801_check_epoch0_receipts.py",
+            "scripts/nhc0801_pyscf_parent_worker.py",
         ],
-        "status": "dry_run_runner_ready",
+        "status": "live_running_or_dry_ready",
         "notes": (
-            "dry-run: pure ref + official _0 route on Validation roots under g001/epoch0; "
-            "live requires epoch0_execution + real engines + claim"
+            "dry-run ready; live parent uses wb97m-d3bj worker; "
+            "after live finish MUST audit campaign_receipt + root receipts"
         ),
     },
     4: {
         "title": "Train AIMNet2 on Train frames",
         "modules": [
             "nhc_deprot.training.multi_seed_trainer",
+            "nhc_deprot.training.live_aimnet2",
             "nhc_deprot.training.config",
             "nhc_deprot.training.weighted_loss",
             "nhc_deprot.training.trainer_adapter",
             "nhc_deprot.data.weighted_dataset",
             "scripts/nhc0801_train_dry_run.py",
+            "scripts/nhc0801_live_orchestrate.py",
         ],
-        "status": "dry_run_loop_ready",
+        "status": "live_train_pass_pilot",
         "notes": (
-            "multi-seed dry-run over g001 weighted NPZ; "
-            "live needs aimnet2_train_authorized + torch backend"
+            "g001 live 3×200 PASS on pilot weighted NPZ; "
+            "quick-val never final-selects"
         ),
     },
     5: {
         "title": "Multi-epoch checkpoints",
         "modules": [
             "nhc_deprot.training.multi_seed_trainer",
+            "nhc_deprot.training.live_aimnet2.export_checkpoint",
             "nhc_deprot.contracts.tvt_gates.quick_checkpoint_shortlist",
         ],
-        "status": "dry_run_loop_ready",
-        "notes": "all outcomes retained; ckpt meta only in dry-run; no best-by-val final select",
+        "status": "live_checkpoints_written",
+        "notes": "all outcomes retained; live .pt currently last-epoch export per seed",
     },
     6: {
         "title": "Quick validation on stored frames",
@@ -91,52 +98,60 @@ MINDMAP_IMPLEMENTATION: Final = {
             "nhc_deprot.training.multi_seed_trainer",
             "nhc_deprot.training.weighted_loss.WeightedEvaluationAccumulator",
         ],
-        "status": "wired_in_trainer_dry_run",
+        "status": "wired_live_and_dry",
         "notes": "Must not select final model",
     },
     7: {
         "title": "Shortlist checkpoints",
         "modules": [
+            "nhc_deprot.pipeline.checkpoint_shortlist",
             "nhc_deprot.contracts.tvt_gates.quick_checkpoint_shortlist",
             "nhc_deprot.training.multi_seed_trainer",
+            "scripts/nhc0801_shortlist_from_train.py",
         ],
-        "status": "wired_in_trainer_dry_run",
-        "notes": "per-seed shortlist only; final selection still sci-val",
+        "status": "campaign_aggregator_ready",
+        "notes": "per-seed shortlist → sci_val/shortlist_campaign.json; not final select",
     },
     8: {
         "title": "Full scientific validation route",
         "modules": [
+            "nhc_deprot.pipeline.sci_val_campaign",
             "nhc_deprot.pipeline.scientific_validation",
             "nhc_deprot.pipeline.parent_handoff",
             "nhc_deprot.pipeline.mindmap_orchestrator",
+            "scripts/nhc0801_sci_val_dry_run.py",
         ],
-        "status": "writer_ready_live_gated",
+        "status": "dry_run_campaign_ready_live_gated",
         "notes": (
-            "Writer implements GAU_LOOSE→handoff→parent GAU→label; "
-            "live engines require scientific_validation_live; sim backends for tests"
+            "Writer + campaign dry-run; live engines require scientific_validation_live"
         ),
     },
     9: {
         "title": "Validation selects final checkpoint",
         "modules": [
+            "nhc_deprot.pipeline.sci_val_campaign",
             "nhc_deprot.pipeline.scientific_validation.select_after_scientific_validation",
             "nhc_deprot.contracts.tvt_gates.select_scientific_checkpoint",
             "docs/contracts/NUMERIC_CALIBRATION_V001.yaml",
         ],
-        "status": "gates_and_writer_ready",
+        "status": "selection_wired_in_campaign",
         "notes": "Selection consumes CheckpointScientificValidation.selection_payload()",
     },
     10: {
         "title": "Freeze all identities",
-        "modules": ["nhc_deprot.contracts.tvt_gates.final_test_readiness"],
-        "status": "gates_ready",
-        "notes": "Source commit not frozen in V004",
+        "modules": [
+            "nhc_deprot.pipeline.freeze_package",
+            "nhc_deprot.contracts.tvt_gates.final_test_readiness",
+            "scripts/nhc0801_freeze_package.py",
+        ],
+        "status": "provisional_freeze_ready",
+        "notes": "freeze_manifest PROVISIONAL until VALIDATION_SELECTED; FT still sealed",
     },
     11: {
         "title": "Final Test once",
         "modules": ["nhc_deprot.contracts.tvt_gates.final_test_readiness"],
         "status": "sealed",
-        "notes": "Commitment 834f9739…; identities not loaded",
+        "notes": "Commitment 834f9739…; identities not loaded; not authorized",
     },
     12: {
         "title": "No post-Test selection",

@@ -28,18 +28,26 @@ SCOPE: Final = "C"
 PARALLEL_STRATEGY: Final = "S"
 
 # Subdirectories under runs/<generation_id>/
+# Teacher groups: teacher_gpu_g00N/ (uniform; g001 pilot included)
+# Epoch-0 groups: epoch0_val_batches/g00N/
 GENERATION_SUBDIRS: Final = (
     "meta",
     "resources",
-    "teacher",
+    "teacher_gpu_g001",
     "d3",
     "datasets/weighted",
-    "epoch0",
+    "epoch0_val_batches/g001/epoch0",
+    "epoch0_val_batches/g001/logs",
     "train",
     "sci_val",
     "freeze",
     "logs",
 )
+
+# Standard human name: "g001 Epoch-0" → this relative tree under generation_root
+G001_EPOCH0_REL: Final = "epoch0_val_batches/g001/epoch0"
+# Standard human name: "g001 teacher" → teacher_gpu_g001/
+G001_TEACHER_REL: Final = "teacher_gpu_g001"
 
 
 class GenerationError(RuntimeError):
@@ -73,6 +81,15 @@ class GenerationLayout:
             raise GenerationError(f"invalid endpoint: {endpoint}")
         return self.teacher_root_dir(root_id) / endpoint
 
+    def teacher_batch_dir(self, batch_id: str) -> Path:
+        """Teacher product dir for group g00N: teacher_gpu_<batch_id>/.
+
+        Uniform for all groups (g001 pilot, g002, g003, …). Do not use
+        legacy names ``teacher/`` or ``teacher_gpu_side/`` as canonical paths.
+        """
+        bid = _normalize_batch_id(batch_id)
+        return self.generation_root / f"teacher_gpu_{bid}"
+
     def resource_claim_path(self, claim_id: str) -> Path:
         return self.resources_dir / f"claim_{claim_id}.json"
 
@@ -81,6 +98,26 @@ class GenerationLayout:
 
     def generation_meta_path(self) -> Path:
         return self.meta_dir / "generation.json"
+
+    def epoch0_batch_root(self, batch_id: str) -> Path:
+        """Root for one batch's Epoch-0 tree: epoch0_val_batches/<batch_id>/."""
+        bid = _normalize_batch_id(batch_id)
+        return self.generation_root / "epoch0_val_batches" / bid
+
+    def epoch0_batch_dir(self, batch_id: str) -> Path:
+        """Campaign receipts for g00N Epoch-0: .../epoch0_val_batches/<batch_id>/epoch0/."""
+        return self.epoch0_batch_root(batch_id) / "epoch0"
+
+
+def _normalize_batch_id(batch_id: str) -> str:
+    bid = str(batch_id).strip()
+    if bid in {"g001_pilot", "pilot", "g001-pilot"}:
+        return "g001"
+    if bid == "nhc0801-g001":
+        return "g001"
+    if not bid or "/" in bid or ".." in bid:
+        raise GenerationError(f"invalid batch_id: {batch_id!r}")
+    return bid
 
 
 @dataclass
@@ -126,10 +163,12 @@ def resolve_layout(
         generation_root=gen,
         meta_dir=gen / "meta",
         resources_dir=gen / "resources",
-        teacher_dir=gen / "teacher",
+        # g001 teacher: same pattern as g002/g003… (teacher_gpu_g001/)
+        teacher_dir=gen / "teacher_gpu_g001",
         d3_dir=gen / "d3",
         datasets_dir=gen / "datasets" / "weighted",
-        epoch0_dir=gen / "epoch0",
+        # g001 Epoch-0: same pattern as g002/g003… (epoch0_val_batches/g001/)
+        epoch0_dir=gen / "epoch0_val_batches" / "g001" / "epoch0",
         train_dir=gen / "train",
         sci_val_dir=gen / "sci_val",
         freeze_dir=gen / "freeze",
