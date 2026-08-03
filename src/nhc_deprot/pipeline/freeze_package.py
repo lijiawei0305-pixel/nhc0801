@@ -112,6 +112,7 @@ def build_freeze_package(
         ("shortlist_campaign", layout.sci_val_dir / "shortlist_campaign.json"),
         ("sci_val_campaign", layout.sci_val_dir / "campaign_receipt.json"),
         ("epoch0_campaign", layout.epoch0_dir / "campaign_receipt.json"),
+        ("train_campaign_g001", layout.train_campaign_receipt_path("g001")),
         ("train_campaign_live", layout.train_dir / "campaign_receipt_live.json"),
         ("generation_meta", layout.generation_meta_path()),
     ):

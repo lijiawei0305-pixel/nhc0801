@@ -134,10 +134,19 @@ def scan_generation_status(layout: GenerationLayout) -> dict[str, Any]:
             layout.generation_root / "epoch0" / "campaign_receipt.json",
         ],
         4: [
+            layout.train_campaign_receipt_path("g001"),
+            layout.train_batch_dir("g001") / "campaign_receipt_live.json",
+            layout.logs_dir / "train_campaign_g001.json",
+            layout.train_dir / "campaign_receipt_live.json",  # legacy pilot
+            layout.train_dir / "campaign_receipt.json",
+        ],
+        5: [
+            layout.train_campaign_receipt_path("g001"),
+            layout.train_batch_dir("g001") / "campaign_receipt_live.json",
+            layout.logs_dir / "train_campaign_g001.json",
             layout.train_dir / "campaign_receipt_live.json",
             layout.train_dir / "campaign_receipt.json",
         ],
-        5: [layout.train_dir / "campaign_receipt_live.json", layout.train_dir / "campaign_receipt.json"],
         7: [layout.sci_val_dir / "shortlist_campaign.json", layout.logs_dir / "shortlist_campaign.json"],
         8: [layout.sci_val_dir / "campaign_receipt.json", layout.logs_dir / "sci_val_campaign_receipt.json"],
         9: [layout.sci_val_dir / "selection_receipt.json"],
@@ -145,7 +154,8 @@ def scan_generation_status(layout: GenerationLayout) -> dict[str, Any]:
     }
 
     train_metrics: list[dict[str, Any]] = []
-    for seed_dir in sorted(layout.train_dir.glob("seed_*")) if layout.train_dir.is_dir() else []:
+    train_scan = layout.resolve_train_batch_dir_for_read("g001")
+    for seed_dir in sorted(train_scan.glob("seed_*")) if train_scan.is_dir() else []:
         rec = _safe_load(seed_dir / "seed_receipt.json")
         if not rec:
             continue
@@ -155,6 +165,7 @@ def scan_generation_status(layout: GenerationLayout) -> dict[str, Any]:
         tr = (last.get("train") or {}) if isinstance(last, dict) else {}
         train_metrics.append(
             {
+                "batch_id": rec.get("batch_id") or "g001",
                 "seed": rec.get("seed"),
                 "status": rec.get("status"),
                 "epochs_run": rec.get("epochs_run"),

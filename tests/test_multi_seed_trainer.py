@@ -77,9 +77,16 @@ def test_multi_seed_dry_run_retains_all_outcomes(tmp_path: Path) -> None:
             assert meta_path.is_file()
 
     receipt = json.loads(
-        (layout.train_dir / "campaign_receipt.json").read_text(encoding="utf-8")
+        layout.train_campaign_receipt_path("g001").read_text(encoding="utf-8")
     )
     assert receipt["final_model_selected"] is False
+    assert receipt["batch_id"] == "g001"
+    assert receipt["product_rel"] == "train_batches/g001"
+    # products under train_batches/g001/seed_*/epoch_*.meta.json — not bare train/
+    seed_dir = layout.train_seed_dir("g001", 20260730)
+    assert seed_dir.is_dir()
+    assert (seed_dir / "seed_receipt.json").is_file()
+    assert not (layout.train_dir / "campaign_receipt.json").exists()
 
 
 def test_live_without_auth_fails(tmp_path: Path) -> None:

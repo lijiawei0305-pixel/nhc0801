@@ -150,15 +150,18 @@ def run_shortlist_campaign(
     maximum_count_per_seed: int | None = None,
     recompute: bool = False,
     train_dir: Path | None = None,
+    train_batch_id: str = "g001",
 ) -> dict[str, Any]:
-    """Aggregate all seed shortlists under g001/train → g001/sci_val/shortlist_campaign.json."""
+    """Aggregate seed shortlists under train_batches/g00N → sci_val/shortlist_campaign.json.
+
+    Prefer canonical ``train_batches/<batch_id>/``; fall back to legacy ``train/`` for g001.
+    """
 
     cfg = TrainingConfig()
     max_n = maximum_count_per_seed or cfg.quick_checkpoint_maximum_count_per_seed
-    tdir = train_dir or layout.train_dir
+    tdir = train_dir or layout.resolve_train_batch_dir_for_read(train_batch_id)
     if not tdir.is_dir():
         raise ShortlistError(f"train dir missing: {tdir}")
-
     seed_dirs = sorted(p for p in tdir.glob("seed_*") if p.is_dir())
     if not seed_dirs:
         raise ShortlistError(f"no seed_* directories under {tdir}")
@@ -182,6 +185,8 @@ def run_shortlist_campaign(
         "schema": SHORTLIST_CAMPAIGN_SCHEMA,
         "mindmap_step": MINDMAP_STEP,
         "generation_id": layout.generation_id,
+        "batch_id": train_batch_id,
+        "train_product_dir": str(tdir),
         "status": "SHORTLIST_PASS",
         "maximum_count_per_seed": max_n,
         "seed_count": len(per_seed),

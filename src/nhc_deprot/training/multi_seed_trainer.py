@@ -23,6 +23,7 @@ from nhc_deprot.contracts.forbidden_stacks import assert_quick_val_not_final_sel
 from nhc_deprot.contracts.tvt_gates import quick_checkpoint_shortlist
 from nhc_deprot.data.paths import OFFICIAL_AIMNET2_WEIGHT_SHA256
 from nhc_deprot.data.weighted_dataset import REQUIRED_ARRAYS, audit_weighted_dataset
+from nhc_deprot.generation import artifact_names as anames
 from nhc_deprot.generation.layout import GenerationLayout
 from nhc_deprot.data.io_util import write_json
 from nhc_deprot.training.config import TrainingConfig
@@ -37,6 +38,7 @@ TRAIN_CAMPAIGN_SCHEMA: Final = "nhc0801-multi-seed-train-campaign-v1"
 SEED_RECEIPT_SCHEMA: Final = "nhc0801-train-seed-receipt-v1"
 CKPT_META_SCHEMA: Final = "nhc0801-checkpoint-meta-v1"
 MINDMAP_STEPS: Final = (4, 5)
+DEFAULT_TRAIN_BATCH_ID: Final = "g001"
 
 
 class TrainerError(RuntimeError):
@@ -254,8 +256,9 @@ def run_one_seed(
     backend: TrainBackend,
     epochs: int,
     dry_run: bool,
+    train_batch_id: str = DEFAULT_TRAIN_BATCH_ID,
 ) -> SeedTrainResult:
-    seed_dir = layout.train_dir / f"seed_{seed}"
+    seed_dir = layout.train_seed_dir(train_batch_id, seed)
     seed_dir.mkdir(parents=True, exist_ok=True)
     result = SeedTrainResult(seed=seed, epochs_run=0)
     last_bias = 0.05
@@ -295,6 +298,7 @@ def run_one_seed(
             log = {
                 "epoch": epoch,
                 "seed": seed,
+                "batch_id": train_batch_id,
                 "train": train_out,
                 "quick_validation": val_out,
                 "quick_validation_may_select_final_model": False,
@@ -304,8 +308,15 @@ def run_one_seed(
 
             # Retain checkpoint meta every interval and always last epoch
             if epoch % config.checkpoint_interval_epochs == 0 or epoch == epochs:
+                meta_path = layout.train_checkpoint_meta_path(
+                    train_batch_id, seed, epoch
+                )
+                weight_path = layout.train_checkpoint_weight_path(
+                    train_batch_id, seed, epoch
+                )
                 ckpt = {
                     "schema": CKPT_META_SCHEMA,
+                    "batch_id": train_batch_id,
                     "seed": seed,
                     "epoch": epoch,
                     "dry_run": dry_run,
@@ -314,9 +325,11 @@ def run_one_seed(
                     "validation_weighted_loss": val_out.get("validation_weighted_loss"),
                     "train_weighted_loss": train_out.get("train_weighted_loss"),
                     "checkpoint_selection_permitted": False,
-                    "path": str(seed_dir / f"epoch_{epoch:04d}.meta.json"),
+                    "path": str(meta_path),
+                    "weight_path": str(weight_path),
+                    "weight_basename": anames.train_checkpoint_weight_name(epoch),
                 }
-                write_json(Path(ckpt["path"]), ckpt, overwrite=True)
+                write_json(meta_path, ckpt, overwrite=True)
                 result.checkpoints.append(ckpt)
 
         # Shortlist from retained checkpoints (screening only)
@@ -340,9 +353,10 @@ def run_one_seed(
         result.failure_reason = f"{type(exc).__name__}: {exc}"
 
     write_json(
-        seed_dir / "seed_receipt.json",
+        layout.train_seed_receipt_path(train_batch_id, seed),
         {
             "schema": SEED_RECEIPT_SCHEMA,
+            "batch_id": train_batch_id,
             "mindmap_steps": list(MINDMAP_STEPS),
             **result.as_dict(),
             "final_model_selected": False,
@@ -362,9 +376,12 @@ def run_multi_seed_training(
     dry_run_epochs: int | None = 5,
     backend: TrainBackend | None = None,
     skip_dataset_audit: bool = False,
+    train_batch_id: str = DEFAULT_TRAIN_BATCH_ID,
 ) -> dict[str, Any]:
-    """Run multi-seed training skeleton over generation weighted dataset."""
+    """Run multi-seed training skeleton over generation weighted dataset.
 
+    Products land under ``train_batches/<train_batch_id>/`` (human: g00N train).
+    """
     cfg = config or TrainingConfig()
     cfg.assert_policy()
     assert_quick_val_not_final_selector(
@@ -420,7 +437,9 @@ def run_multi_seed_training(
     if dry_run and dry_run_epochs is not None:
         epochs = min(cfg.epochs, max(1, int(dry_run_epochs)))
 
-    layout.train_dir.mkdir(parents=True, exist_ok=True)
+    train_root = layout.train_batch_dir(train_batch_id)
+    train_root.mkdir(parents=True, exist_ok=True)
+    layout.train_batch_logs_dir(train_batch_id).mkdir(parents=True, exist_ok=True)
     seed_results: list[dict[str, Any]] = []
     all_checkpoints: list[dict[str, Any]] = []
 
@@ -435,6 +454,7 @@ def run_multi_seed_training(
             backend=backend,
             epochs=epochs,
             dry_run=dry_run,
+            train_batch_id=train_batch_id,
         )
         seed_results.append(one.as_dict())
         for ckpt in one.checkpoints:
@@ -445,6 +465,9 @@ def run_multi_seed_training(
         "schema": TRAIN_CAMPAIGN_SCHEMA,
         "mindmap_steps": list(MINDMAP_STEPS),
         "generation_id": layout.generation_id,
+        "batch_id": train_batch_id,
+        "product_dir": str(train_root),
+        "product_rel": f"{anames.TRAIN_BATCHES_DIR}/{train_batch_id}",
         "dry_run": dry_run,
         "live_chemistry": not dry_run,
         "aimnet2_train_authorized": aimnet2_train_authorized,
@@ -471,6 +494,7 @@ def run_multi_seed_training(
             )
         ),
         "notes": [
+            "products under train_batches/g00N/ only (not bare train/)",
             "quick-val loss only shortlists; never final model",
             "retain all seeds/epochs/failures",
             "dry-run SimulatedResidualModel is not AIMNet2",
@@ -478,6 +502,11 @@ def run_multi_seed_training(
         ],
         "final_test_payload_read": False,
     }
-    write_json(layout.train_dir / "campaign_receipt.json", campaign, overwrite=True)
-    write_json(layout.logs_dir / "train_campaign_receipt.json", campaign, overwrite=True)
+    write_json(layout.train_campaign_receipt_path(train_batch_id), campaign, overwrite=True)
+    # Group-scoped copy under generation logs/ (basename carries g00N)
+    write_json(
+        layout.logs_dir / f"train_campaign_{train_batch_id}.json",
+        campaign,
+        overwrite=True,
+    )
     return campaign

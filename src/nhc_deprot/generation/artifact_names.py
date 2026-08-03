@@ -1,7 +1,7 @@
 """Canonical experimental artifact names under runs/<generation>/.
 
 Policy (AGENTS.md Experimental data naming):
-  - Product dirs: teacher_gpu_g00N/, epoch0_val_batches/g00N/
+  - Product dirs: teacher_gpu_g00N/, epoch0_val_batches/g00N/, train_batches/g00N/
   - Log basenames: prefer group-scoped stable names; accept legacy *02c* as read aliases
   - Engineering module names (gpu_autofill) may differ from user-facing g00N labels
 
@@ -13,6 +13,37 @@ from __future__ import annotations
 
 from pathlib import Path
 from typing import Final, Iterable, Sequence
+
+# --- Fine-tune / AIMNet2 train (group-scoped) ---
+# Human: "g00N train" → train_batches/g00N/
+TRAIN_BATCHES_DIR: Final = "train_batches"
+TRAIN_MANIFEST_JSON: Final = "train_manifest.json"
+TRAIN_CAMPAIGN_RECEIPT_JSON: Final = "campaign_receipt.json"
+TRAIN_SEED_RECEIPT_JSON: Final = "seed_receipt.json"
+TRAIN_DIR_LEGACY: Final = "train"  # pilot only; do not write new campaigns here
+
+
+def train_log_basename(batch_id: str) -> str:
+    """Stdout log for one train group, e.g. train_g001.out."""
+    bid = str(batch_id).strip()
+    return f"train_{bid}.out"
+
+
+def train_seed_dirname(seed: int) -> str:
+    return f"seed_{int(seed)}"
+
+
+def train_checkpoint_stem(epoch: int) -> str:
+    """Shared stem for weights + meta: epoch_NNNN."""
+    return f"epoch_{int(epoch):04d}"
+
+
+def train_checkpoint_weight_name(epoch: int) -> str:
+    return f"{train_checkpoint_stem(epoch)}.pt"
+
+
+def train_checkpoint_meta_name(epoch: int) -> str:
+    return f"{train_checkpoint_stem(epoch)}.meta.json"
 
 # --- Teacher wave (g001 pilot CPU wave historically trial 02c) ---
 TEACHER_WAVE_LOG: Final = "teacher_wave_g001.out"
@@ -43,6 +74,18 @@ EPOCH0_START_MARKER_LEGACY: Final = (
 GPU_TEACHER_STATE_DIR: Final = "gpu_teacher_queue"
 GPU_TEACHER_STATE_DIR_LEGACY: Final = "gpu_autofill"  # migrate → gpu_teacher_queue
 GPU_TEACHER_LOG_TAG: Final = "gpu-teacher"  # stdout tag for humans
+
+# Banned product names for new fine-tune writes (read of legacy train/ is OK)
+TRAIN_BANNED_WRITE_NAMES: Final = (
+    "train",  # bare generation-level train/ as new campaign root
+    "finetune",
+    "ft",
+    "ckpts",
+    "checkpoints",
+    "best.pt",
+    "latest.pt",
+    "model.pt",
+)
 
 
 def resolve_existing(logs_dir: Path, canonical: str, legacy: Sequence[str] = ()) -> Path | None:

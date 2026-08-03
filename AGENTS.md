@@ -59,8 +59,8 @@ Conflict order: **mindmap.md** → **`docs/contracts/COMPUTE_DISPATCH_V001.md`**
 ## Experimental data naming（实验计算数据命名 · 硬规则）
 
 **原则：** 每一次实验计算产物必须 **组号清晰、目录与组号同构、对人说法与磁盘一致**。  
-**实现入口：** `src/nhc_deprot/generation/layout.py`（`teacher_batch_dir` / `epoch0_batch_dir`）。  
-**词典：** `docs/NHC0801_命名与进度指南.md`。
+**实现入口：** `src/nhc_deprot/generation/layout.py`（`teacher_batch_dir` / `epoch0_batch_dir` / `train_batch_dir`）。  
+**词典：** `docs/NHC0801_命名与进度指南.md`（本地；可能未上传 GitHub）。
 
 ### 1) 分子组 `g00N`（唯一用户可见批名）
 
@@ -69,7 +69,7 @@ Conflict order: **mindmap.md** → **`docs/contracts/COMPUTE_DISPATCH_V001.md`**
 | 组名 | **`g001`、`g002`、`g003`、…** 顺序编号，禁止自造别名当产品名 |
 | 规模 | **5 molecular roots** = **3 Train + 2 Val**（InChIKey 字典序：前 3 训、后 2 验） |
 | 端点 | **10** = 5 × (cation + neutral) |
-| 对人说 | **「g003 teacher」** / **「g003 Epoch-0」** — 禁止说「Autofill 第 3 批」「扩展批」「侧线」当正式名 |
+| 对人说 | **「g003 teacher」** / **「g003 Epoch-0」** / **「g003 train」** — 禁止说「Autofill 第 3 批」「扩展批」「侧线」当正式名 |
 
 ### 2) 产物目录（规范 · 禁止例外）
 
@@ -77,6 +77,7 @@ Conflict order: **mindmap.md** → **`docs/contracts/COMPUTE_DISPATCH_V001.md`**
 | --- | --- | --- |
 | 老师帧 | **g00N teacher** | **`teacher_gpu_g00N/`** |
 | Epoch-0 基线 | **g00N Epoch-0** | **`epoch0_val_batches/g00N/`**（其下可有 `epoch0/`、`logs/`） |
+| AIMNet2 微调 | **g00N train** | **`train_batches/g00N/`**（其下 `seed_*`、`epoch_NNNN.pt`） |
 | generation 总目录 | — | **`runs/nhc0801-g001/`**（勿简写成 `runs/g001/`） |
 
 **强制同构示例：**
@@ -87,8 +88,33 @@ teacher_gpu_g002/     ← g002 teacher（不要再叫 teacher_gpu_side/）
 teacher_gpu_g003/     ← g003 teacher
 epoch0_val_batches/g001/   ← g001 Epoch-0
 epoch0_val_batches/g002/   ← g002 Epoch-0
+train_batches/g001/        ← g001 train / 微调
+train_batches/g002/        ← g002 train（若单独开训）
 ```
 
+**微调目录内文件命名（强制）：**
+
+```text
+train_batches/g00N/
+  train_manifest.json          # 可选：训练身份（roots、老师来源、超参）
+  campaign_receipt.json        # 多种子 campaign 总收据
+  logs/
+    train_g00N.out             # 组级日志（basename 必须带 g00N）
+  seed_<seed>/                 # 例 seed_20260730
+    seed_receipt.json
+    epoch_0005.pt              # 权重：epoch_ + 四位十进制
+    epoch_0005.meta.json       # 与 .pt 同 stem
+    epoch_0200.pt
+    epoch_0200.meta.json
+```
+
+| 正确 | 错误（禁止新写） |
+| --- | --- |
+| `train_batches/g001/seed_20260730/epoch_0200.pt` | `train/best.pt`、`train/latest.pt`、`ckpts/model.pt` |
+| `train_batches/g001/campaign_receipt.json` | 无组号的 `runs/.../train/campaign_receipt.json` 作为**新** campaign 主路径 |
+| 收据字段含 **`batch_id`: `g00N`** | 只有 seed/epoch、无法定位组号 |
+
+旧 pilot 目录 **`train/`**（`seed_*` 直接挂在下面）**只读兼容**；**新微调只写 `train_batches/g00N/`**。
 ### 3) 目录 / 收据内部字段
 
 - 收据 JSON 必须可定位组号：含 **`batch_id`**（`g00N`）和/或写在 **规范路径** 下。  
@@ -111,16 +137,18 @@ epoch0_val_batches/g002/   ← g002 Epoch-0
 | `teacher_gpu_side/` | `teacher_gpu_g002/` |
 | `teacher_cpu/`、`teacher_gpu/`（无组号） | `teacher_gpu_g00N/` |
 | 顶层 `epoch0/` 作为 g001 专用规范位 | `epoch0_val_batches/g001/` |
-| 「Autofill 批 / 扩展批 / 侧线 e0」 | **g00N** / **g00N Epoch-0** |
+| 顶层 `train/` 作为新微调规范位 | `train_batches/g00N/` |
+| `best.pt` / `latest.pt` / 无 epoch 编号的权重 | `epoch_NNNN.pt`（四位） |
+| 「Autofill 批 / 扩展批 / 侧线 e0」 | **g00N** / **g00N Epoch-0** / **g00N train** |
 | `runs/g001/` | `runs/nhc0801-g001/` |
 
 ### 6) 写代码 / 写文档时的自检
 
 1. 新产物路径是否含 **`g00N` 组号**？  
-2. teacher 是否落在 **`teacher_gpu_g00N/`**？Epoch-0 是否落在 **`epoch0_val_batches/g00N/`**？  
-3. 对人说明是否 **零 Autofill / 零 side / 零无名 teacher/**？  
-4. 合同、计划、TUI、脚本 help 是否与上表一致？（改路径必改合同或升版）
-
+2. teacher 是否落在 **`teacher_gpu_g00N/`**？Epoch-0 是否落在 **`epoch0_val_batches/g00N/`**？微调是否落在 **`train_batches/g00N/`**？  
+3. checkpoint 是否为 **`seed_<seed>/epoch_NNNN.{pt,meta.json}`**？  
+4. 对人说明是否 **零 Autofill / 零 side / 零无名 teacher/ 或 train/**？  
+5. 合同、计划、TUI、脚本 help 是否与上表一致？（改路径必改合同或升版）
 ---
 
 ## Documentation rules（写文档规矩）
