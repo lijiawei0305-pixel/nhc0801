@@ -86,58 +86,55 @@ E_{\mathrm{short}} = E_{\mathrm{DFT,total}} - E_{\mathrm{D3}}, \quad
 
 ---
 
-## Method Overview
+## 方法总览
 
-端到端科学工作流：从冻结分子与 DFT 参考轨迹，到 AIMNet2 有监督微调，再到完整几何路线选模与密封测试。  
-（GitHub 原生 [Mermaid](https://docs.github.com/en/get-started/writing-on-github/working-with-advanced-formatting/creating-diagrams) 渲染；逐步细节见 [`mindmap.md`](mindmap.md)。）
+从冻结分子与 DFT 参考轨迹，到 AIMNet2 微调、完整几何路线选模，再到密封测试。细节见 [`mindmap.md`](mindmap.md)。
 
 ```mermaid
 flowchart TB
-  %% NHC0801 end-to-end scientific workflow
   classDef data fill:#e8f4fc,stroke:#1d6fa5,stroke-width:1.5px,color:#0b2e4a
   classDef model fill:#f3e8ff,stroke:#7c3aed,stroke-width:1.5px,color:#3b0764
   classDef gate fill:#fff7ed,stroke:#c2410c,stroke-width:1.5px,color:#7c2d12
-  classDef eval fill:#ecfdf5,stroke:#047857,stroke-width:1.5px,color:#064e3b
   classDef seal fill:#fef2f2,stroke:#b91c1c,stroke-width:2px,color:#7f1d1d
 
-  subgraph P1["① Reference Data"]
+  subgraph P1["① 参考数据"]
     direction TB
-    A["Freeze molecular roots<br/>NHC–H⁺ / NHC · charge · multiplicity · structure SHA"]
-    B["Root-isolated split<br/>Train ∩ Val ∩ Test = ∅"]
-    C["ωB97M-D3(BJ)/def2-TZVPP<br/>full opt · trajectories · E / F"]
+    A["冻结 molecular root<br/>两端点 · 电荷 · 多重度 · 结构哈希"]
+    B["按 root 划分<br/>Train / Val / Test 互不相交"]
+    C["ωB97M-D3(BJ)/def2-TZVPP<br/>完整优化 · 轨迹 · 能量与力"]
     A --> B --> C
   end
 
-  C --> Train["Train frames<br/>for learning only"]
-  C --> Val["Validation<br/>baseline + selection"]
-  C --> Test["Final Test<br/>sealed until end"]
+  C --> Train["Train 帧<br/>仅用于训练"]
+  C --> Val["Validation<br/>基线与选模"]
+  C --> Test["Final Test<br/>密封至最后"]
 
-  subgraph P2["② Epoch-0 Baseline"]
+  subgraph P2["② Epoch-0 基线"]
     direction TB
-    D["Official AIMNet2 _0_<br/>no fine-tuning"]
-    E["GAU_LOOSE → exact-byte handoff<br/>→ DFT full opt → label"]
+    D["官方 AIMNet2（未微调）"]
+    E["GAU_LOOSE → handoff<br/>→ DFT 完整优化 → 标签"]
     D --> E
   end
 
-  subgraph P3["③ Supervised Fine-Tuning"]
+  subgraph P3["③ 有监督微调"]
     direction TB
-    F["Fit short-range residual E/F<br/>on Train only"]
-    G["Multi-epoch · multi-seed<br/>checkpoints"]
-    H["Quick val: frame loss<br/>shortlist candidates only"]
+    F["仅 Train：拟合短程残差 E/F"]
+    G["多 epoch · 多种子 checkpoint"]
+    H["快速验证：只筛候选<br/>不定终选"]
     F --> G --> H
   end
 
-  subgraph P4["④ Scientific Selection"]
+  subgraph P4["④ 科学选模"]
     direction TB
-    I["Full route on shortlist<br/>AIMNet2 → handoff → DFT"]
-    J["Compare vs DFT reference<br/>and Epoch-0 · pick one ckpt"]
-    K["Freeze model · splits · protocol"]
+    I["短名单完整路线<br/>AIMNet2 → handoff → DFT"]
+    J["对照 DFT 参考与 Epoch-0<br/>选定唯一模型"]
+    K["冻结模型 · 划分 · 协议"]
     I --> J --> K
   end
 
-  subgraph P5["⑤ Sealed Final Test"]
+  subgraph P5["⑤ 密封 Final Test"]
     direction TB
-    L["Single evaluation<br/>no retuning after release"]
+    L["一次性评估 · 考后不改模型"]
   end
 
   Val --> D
@@ -154,24 +151,22 @@ flowchart TB
   class K,L seal
 ```
 
-**读图要点**
+| 阶段 | 要点 |
+| --- | --- |
+| ① 参考数据 | 冻结 root、互不交叉划分、生成 DFT 老师轨迹 |
+| ② Epoch-0 | 未微调模型走完整路线，作微调前对照 |
+| ③ 微调 | 只学 Train；快速验证只筛候选 |
+| ④ 选模 | 完整几何路线比标签，不靠帧 loss 定终选 |
+| ⑤ Final Test | 密封集只考一次 |
 
-| 阶段 | 做什么 | 设计意图 |
-| --- | --- | --- |
-| ① Reference Data | 冻结 root → 不交叉划分 → DFT 参考轨迹 | 标签可审计；同分子两端点永不跨 split |
-| ② Epoch-0 | 官方未微调 AIMNet2 走完整几何路线 | 「微调前」对照，不是终点模型 |
-| ③ Fine-Tuning | 仅 Train 帧监督更新；quick-val 只筛候选 | 学习过程与终选分离 |
-| ④ Selection | 短名单上完整 GAU_LOOSE → handoff → DFT | 按收敛几何与标签选模，不靠帧 loss 定终身 |
-| ⑤ Final Test | 密封集一次性评估 | 开发期不可见身份；考后不改模型 |
-
-**完整几何评估路线**（Epoch-0 / 科学选模 / Final Test 共用）：
+**共用几何评估路线**（Epoch-0 / 选模 / Final Test）：
 
 ```text
-冻结几何 → AIMNet2 @ GAU_LOOSE → exact-byte handoff
+冻结几何 → AIMNet2（GAU_LOOSE）→ exact-byte handoff
         → ωB97M-D3(BJ)/def2-TZVPP 完整优化 → 单点与 ΔE_deprot
 ```
 
-规模化计算按分子组 **`g00N`**（5 root = 3 Train + 2 Val）：老师帧 `teacher_gpu_g00N/`，Epoch-0 `epoch0_val_batches/g00N/`。进度见 [`progress.md`](progress.md)。
+规模化按 **`g00N`**（5 root = 3 Train + 2 Val）：老师帧 `teacher_gpu_g00N/`，Epoch-0 `epoch0_val_batches/g00N/`。进度见 [`progress.md`](progress.md)。
 
 ---
 
