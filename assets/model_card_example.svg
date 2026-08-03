@@ -2,39 +2,39 @@
 <rect width="100%" height="100%" fill="#f8fafc"/>
 <rect x="16" y="16" width="728" height="472" rx="12" fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>
 <rect x="16" y="16" width="8" height="472" rx="2" fill="#0ea5e9"/>
-<text x="40" y="52" fill="#0f172a" font-size="24" font-weight="700" font-family="system-ui,sans-serif">AIMNet2 NHC  v0.1</text>
-<text x="40" y="76" fill="#64748b" font-size="13" font-family="system-ui,sans-serif">g001 → v0.1  ·  ωB97M-D3(BJ)/def2-TZVPP  ·  seed 20260730  epoch 200</text>
-<text x="40" y="96" fill="#94a3b8" font-size="12" font-family="system-ui,sans-serif">NHC-H+ → NHC + H+  ·  models/v0.1/model.pt</text>
-<text x="40" y="112" fill="#64748b" font-size="11" font-family="system-ui,sans-serif" font-weight="600" letter-spacing="0.06em">ERRORS  (LONGER BAR = BETTER)</text>
-<text x="40" y="148" fill="#334155" font-size="13" font-family="system-ui,sans-serif">Energy MAE (kcal/mol)</text>
-<rect x="200" y="134" width="420" height="18" rx="4" fill="#e2e8f0"/>
-<rect x="200" y="134" width="301.0" height="18" rx="4" fill="#0ea5e9"/>
+<text x="40" y="52" fill="#0f172a" font-size="24" font-weight="700" font-family="system-ui,'PingFang SC','Noto Sans SC',sans-serif">AIMNet2 NHC  v0.1</text>
+<text x="40" y="76" fill="#64748b" font-size="13" font-family="system-ui,'PingFang SC','Noto Sans SC',sans-serif">g001 → v0.1  ·  ωB97M-D3(BJ)/def2-TZVPP  ·  seed 20260730  epoch 200</text>
+<text x="40" y="96" fill="#94a3b8" font-size="12" font-family="system-ui,'PingFang SC','Noto Sans SC',sans-serif">反应 NHC-H+ → NHC + H+  ·  models/v0.1/model.pt</text>
+<text x="40" y="112" fill="#64748b" font-size="12" font-family="system-ui,'PingFang SC','Noto Sans SC',sans-serif" font-weight="600">误差（条越长越好）</text>
+<text x="40" y="148" fill="#334155" font-size="13" font-family="system-ui,'PingFang SC','Noto Sans SC',sans-serif">Energy MAE (kcal/mol)</text>
+<rect x="220" y="134" width="400" height="18" rx="4" fill="#e2e8f0"/>
+<rect x="220" y="134" width="286.7" height="18" rx="4" fill="#0ea5e9"/>
 <text x="632" y="148" fill="#0f172a" font-size="13" font-family="ui-monospace,monospace">0.85</text>
-<text x="40" y="180" fill="#334155" font-size="13" font-family="system-ui,sans-serif">Force MAE (eV/Å)</text>
-<rect x="200" y="166" width="420" height="18" rx="4" fill="#e2e8f0"/>
-<rect x="200" y="166" width="308.0" height="18" rx="4" fill="#0ea5e9"/>
+<text x="40" y="180" fill="#334155" font-size="13" font-family="system-ui,'PingFang SC','Noto Sans SC',sans-serif">Force MAE (eV/Å)</text>
+<rect x="220" y="166" width="400" height="18" rx="4" fill="#e2e8f0"/>
+<rect x="220" y="166" width="293.3" height="18" rx="4" fill="#0ea5e9"/>
 <text x="632" y="180" fill="#0f172a" font-size="13" font-family="ui-monospace,monospace">0.04</text>
-<text x="40" y="212" fill="#334155" font-size="13" font-family="system-ui,sans-serif">ΔE_deprot MAE (kcal/mol)</text>
-<rect x="200" y="198" width="420" height="18" rx="4" fill="#e2e8f0"/>
-<rect x="200" y="198" width="294.0" height="18" rx="4" fill="#8b5cf6"/>
+<text x="40" y="212" fill="#334155" font-size="13" font-family="system-ui,'PingFang SC','Noto Sans SC',sans-serif">ΔE_deprot MAE (kcal/mol)</text>
+<rect x="220" y="198" width="400" height="18" rx="4" fill="#e2e8f0"/>
+<rect x="220" y="198" width="280.0" height="18" rx="4" fill="#8b5cf6"/>
 <text x="632" y="212" fill="#0f172a" font-size="13" font-family="ui-monospace,monospace">1.5</text>
-<text x="40" y="230" fill="#64748b" font-size="11" font-family="system-ui,sans-serif" font-weight="600" letter-spacing="0.06em">ROUTE RELIABILITY</text>
-<text x="40" y="266" fill="#334155" font-size="13" font-family="system-ui,sans-serif">Handoff pass</text>
-<rect x="200" y="252" width="420" height="18" rx="4" fill="#e2e8f0"/>
-<rect x="200" y="252" width="420.0" height="18" rx="4" fill="#10b981"/>
+<text x="40" y="230" fill="#64748b" font-size="12" font-family="system-ui,'PingFang SC','Noto Sans SC',sans-serif" font-weight="600">路线可靠性</text>
+<text x="40" y="266" fill="#334155" font-size="13" font-family="system-ui,'PingFang SC','Noto Sans SC',sans-serif">Handoff pass</text>
+<rect x="220" y="252" width="400" height="18" rx="4" fill="#e2e8f0"/>
+<rect x="220" y="252" width="400.0" height="18" rx="4" fill="#10b981"/>
 <text x="632" y="266" fill="#0f172a" font-size="13" font-family="ui-monospace,monospace">100%</text>
-<text x="40" y="298" fill="#334155" font-size="13" font-family="system-ui,sans-serif">Topology pass</text>
-<rect x="200" y="284" width="420" height="18" rx="4" fill="#e2e8f0"/>
-<rect x="200" y="284" width="420.0" height="18" rx="4" fill="#10b981"/>
+<text x="40" y="298" fill="#334155" font-size="13" font-family="system-ui,'PingFang SC','Noto Sans SC',sans-serif">Topology pass</text>
+<rect x="220" y="284" width="400" height="18" rx="4" fill="#e2e8f0"/>
+<rect x="220" y="284" width="400.0" height="18" rx="4" fill="#10b981"/>
 <text x="632" y="298" fill="#0f172a" font-size="13" font-family="ui-monospace,monospace">100%</text>
-<text x="40" y="316" fill="#64748b" font-size="11" font-family="system-ui,sans-serif" font-weight="600" letter-spacing="0.06em">COST VS EPOCH-0  (LONGER = CHEAPER THAN E0)</text>
-<text x="40" y="352" fill="#334155" font-size="13" font-family="system-ui,sans-serif">Parent steps vs e0</text>
-<rect x="200" y="338" width="420" height="18" rx="4" fill="#e2e8f0"/>
-<rect x="200" y="338" width="327.6" height="18" rx="4" fill="#f59e0b"/>
+<text x="40" y="316" fill="#64748b" font-size="12" font-family="system-ui,'PingFang SC','Noto Sans SC',sans-serif" font-weight="600">相对 Epoch-0 成本（条越长越省）</text>
+<text x="40" y="352" fill="#334155" font-size="13" font-family="system-ui,'PingFang SC','Noto Sans SC',sans-serif">Parent steps vs e0</text>
+<rect x="220" y="338" width="400" height="18" rx="4" fill="#e2e8f0"/>
+<rect x="220" y="338" width="312.0" height="18" rx="4" fill="#f59e0b"/>
 <text x="632" y="352" fill="#0f172a" font-size="13" font-family="ui-monospace,monospace">0.72×</text>
-<text x="40" y="384" fill="#334155" font-size="13" font-family="system-ui,sans-serif">Wall time vs e0</text>
-<rect x="200" y="370" width="420" height="18" rx="4" fill="#e2e8f0"/>
-<rect x="200" y="370" width="294.0" height="18" rx="4" fill="#f59e0b"/>
+<text x="40" y="384" fill="#334155" font-size="13" font-family="system-ui,'PingFang SC','Noto Sans SC',sans-serif">Wall time vs e0</text>
+<rect x="220" y="370" width="400" height="18" rx="4" fill="#e2e8f0"/>
+<rect x="220" y="370" width="280.0" height="18" rx="4" fill="#f59e0b"/>
 <text x="632" y="384" fill="#0f172a" font-size="13" font-family="ui-monospace,monospace">0.80×</text>
-<text x="40" y="476" fill="#94a3b8" font-size="11" font-family="ui-monospace,monospace">sha a1b2c3d4e5f6…  ·  select: scientific validation</text>
+<text x="40" y="476" fill="#94a3b8" font-size="11" font-family="system-ui,'PingFang SC','Noto Sans SC',monospace">sha a1b2c3d4e5f6…  ·  选模：科学 Validation 选模</text>
 </svg>

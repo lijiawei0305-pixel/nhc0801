@@ -147,8 +147,6 @@ models/v0.1/
   model.pt   info.json   card.json   card.svg
 ```
 
-每发一版生成 **card.svg**（柱状示意：误差 / 通过率 / 相对 Epoch-0 成本）。示例：
-
 ![v0.1 model card](assets/model_card_example.svg)
 
 ---

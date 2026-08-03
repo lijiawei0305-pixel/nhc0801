@@ -67,13 +67,14 @@ def _bar_row(
     value_text: str,
     frac: float | None,
     color: str,
-    track_w: float = 420,
-    x0: float = 200,
+    track_w: float = 400,
+    x0: float = 220,
 ) -> list[str]:
-    """One horizontal bar; frac in [0,1] fills the track. None → empty track + em dash."""
+    """横向柱：指标名（可中英混排）+ 数值。"""
     parts = [
         f'<text x="40" y="{y + 14}" fill="#334155" font-size="13" '
-        f'font-family="system-ui,sans-serif">{_esc(label)}</text>',
+        f'font-family="system-ui,\'PingFang SC\',\'Noto Sans SC\',sans-serif">'
+        f"{_esc(label)}</text>",
         f'<rect x="{x0}" y="{y}" width="{track_w}" height="18" rx="4" fill="#e2e8f0"/>',
     ]
     if frac is not None and frac >= 0:
@@ -105,12 +106,11 @@ def _norm_ratio(val: float | None) -> float | None:
 
 
 def render_model_card_svg(feat: ModelCardFeatures, *, width: int = 760) -> str:
-    """Clean release chart: identity strip + horizontal bars (not a wall of text)."""
-    # Layout
+    """发布图：中文说明 + 指标名保留英文（如 Energy MAE）。"""
     header_h = 88
     pad = 28
     row_h = 32
-    # sections of bars
+    # 指标标签：英文技术名；分区标题用中文
     error_items: list[tuple[str, str, float | None, str]] = [
         (
             f"Energy MAE ({feat.energy_unit})",
@@ -160,32 +160,32 @@ def render_model_card_svg(feat: ModelCardFeatures, *, width: int = 760) -> str:
         ),
     ]
 
-    n_rows = len(error_items) + len(rate_items) + len(cost_items) + 3  # section titles
+    n_rows = len(error_items) + len(rate_items) + len(cost_items) + 3
     chart_h = n_rows * row_h + 40
     height = header_h + chart_h + 56
 
+    seed_s = "—" if feat.seed is None else str(feat.seed)
+    epoch_s = "—" if feat.epoch is None else str(feat.epoch)
     meta = (
         f"{feat.train_batch_id} → {feat.version}  ·  {feat.reference_dft}  ·  "
-        f"seed {feat.seed if feat.seed is not None else '—'}  "
-        f"epoch {feat.epoch if feat.epoch is not None else '—'}"
+        f"seed {seed_s}  epoch {epoch_s}"
     )
 
     parts: list[str] = [
         f'<svg xmlns="http://www.w3.org/2000/svg" width="{width}" height="{height}" '
         f'viewBox="0 0 {width} {height}">',
-        # white card
         f'<rect width="100%" height="100%" fill="#f8fafc"/>',
         f'<rect x="16" y="16" width="{width - 32}" height="{height - 32}" rx="12" '
         f'fill="#ffffff" stroke="#e2e8f0" stroke-width="1.5"/>',
-        # accent bar
         f'<rect x="16" y="16" width="8" height="{height - 32}" rx="2" fill="#0ea5e9"/>',
-        # title
         f'<text x="{pad + 12}" y="52" fill="#0f172a" font-size="24" font-weight="700" '
-        f'font-family="system-ui,sans-serif">{_esc(feat.human_title)}  {_esc(feat.version)}</text>',
+        f'font-family="system-ui,\'PingFang SC\',\'Noto Sans SC\',sans-serif">'
+        f"{_esc(feat.human_title)}  {_esc(feat.version)}</text>",
         f'<text x="{pad + 12}" y="76" fill="#64748b" font-size="13" '
-        f'font-family="system-ui,sans-serif">{_esc(meta)}</text>',
+        f'font-family="system-ui,\'PingFang SC\',\'Noto Sans SC\',sans-serif">{_esc(meta)}</text>',
         f'<text x="{pad + 12}" y="96" fill="#94a3b8" font-size="12" '
-        f'font-family="system-ui,sans-serif">{_esc(feat.reaction)}  ·  {_esc(feat.weight_file)}</text>',
+        f'font-family="system-ui,\'PingFang SC\',\'Noto Sans SC\',sans-serif">'
+        f"反应 {_esc(feat.reaction)}  ·  {_esc(feat.weight_file)}</text>",
     ]
 
     y = header_h + 24
@@ -193,32 +193,34 @@ def render_model_card_svg(feat: ModelCardFeatures, *, width: int = 760) -> str:
     def section(title: str) -> None:
         nonlocal y
         parts.append(
-            f'<text x="{pad + 12}" y="{y}" fill="#64748b" font-size="11" '
-            f'font-family="system-ui,sans-serif" font-weight="600" '
-            f'letter-spacing="0.06em">{_esc(title.upper())}</text>'
+            f'<text x="{pad + 12}" y="{y}" fill="#64748b" font-size="12" '
+            f'font-family="system-ui,\'PingFang SC\',\'Noto Sans SC\',sans-serif" '
+            f'font-weight="600">{_esc(title)}</text>'
         )
         y += 22
 
-    section("Errors  (longer bar = better)")
+    section("误差（条越长越好）")
     for label, vtxt, frac, color in error_items:
         parts.extend(_bar_row(y=y, label=label, value_text=vtxt, frac=frac, color=color))
         y += row_h
 
-    section("Route reliability")
+    section("路线可靠性")
     for label, vtxt, frac, color in rate_items:
         parts.extend(_bar_row(y=y, label=label, value_text=vtxt, frac=frac, color=color))
         y += row_h
 
-    section("Cost vs Epoch-0  (longer = cheaper than e0)")
+    section("相对 Epoch-0 成本（条越长越省）")
     for label, vtxt, frac, color in cost_items:
         parts.extend(_bar_row(y=y, label=label, value_text=vtxt, frac=frac, color=color))
         y += row_h
 
     sha = feat.weight_sha256_short or "—"
+    # selection 说明用中文
+    select_cn = "科学 Validation 选模"
     parts.append(
         f'<text x="{pad + 12}" y="{height - 28}" fill="#94a3b8" font-size="11" '
-        f'font-family="ui-monospace,monospace">sha { _esc(sha) }  ·  '
-        f"select: {_esc(feat.selection)}</text>"
+        f'font-family="system-ui,\'PingFang SC\',\'Noto Sans SC\',monospace">'
+        f"sha {_esc(sha)}  ·  选模：{_esc(select_cn)}</text>"
     )
     parts.append("</svg>")
     return "\n".join(parts)
