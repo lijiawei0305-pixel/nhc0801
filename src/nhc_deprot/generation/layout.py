@@ -131,16 +131,41 @@ class GenerationLayout:
         """Logs for one train group: train_g00N/logs/."""
         return self.train_batch_dir(batch_id) / "logs"
 
+    def train_batch_run_dir(self, batch_id: str, run_id: str) -> Path:
+        """One training recipe under a group: train_g00N/runs/<run_id>/.
+
+        Human: **g00N train** run ``run_id`` (e.g. ``e1f100_mlp_shift``).
+        New writes must use this path; bare ``seed_*`` under ``train_g00N/`` is legacy.
+        """
+        rid = _normalize_run_id(run_id)
+        return self.train_batch_dir(batch_id) / "runs" / rid
+
+    def train_run_seed_dir(self, batch_id: str, run_id: str, seed: int) -> Path:
+        """Canonical seed dir: train_g00N/runs/<run_id>/seed_<seed>/."""
+        return self.train_batch_run_dir(batch_id, run_id) / f"seed_{int(seed)}"
+
+    def pre_screen_batch_dir(self, batch_id: str) -> Path:
+        """Zero-DFT pre-screen root for group g00N: pre_screen_g00N/.
+
+        Under it: ``pre_screen_g00N/<run_id>/`` (filled by pipeline/pre_screen).
+        """
+        bid = _normalize_batch_id(batch_id)
+        return self.generation_root / f"pre_screen_{bid}"
+
     def train_seed_dir(self, batch_id: str, seed: int) -> Path:
-        """One random-seed run: train_g00N/seed_<seed>/."""
+        """Legacy read-only path: train_g00N/seed_<seed>/ (no run_id layer).
+
+        Prefer :meth:`train_run_seed_dir` for new writes. Kept so pilot
+        ``train_g00N/seed_*`` and related checkpoint helpers still resolve.
+        """
         return self.train_batch_dir(batch_id) / f"seed_{int(seed)}"
 
     def train_checkpoint_meta_path(self, batch_id: str, seed: int, epoch: int) -> Path:
-        """Checkpoint meta: .../seed_<seed>/epoch_NNNN.meta.json."""
+        """Checkpoint meta (legacy seed path): .../seed_<seed>/epoch_NNNN.meta.json."""
         return self.train_seed_dir(batch_id, seed) / f"epoch_{int(epoch):04d}.meta.json"
 
     def train_checkpoint_weight_path(self, batch_id: str, seed: int, epoch: int) -> Path:
-        """Checkpoint weights: .../seed_<seed>/epoch_NNNN.pt."""
+        """Checkpoint weights (legacy seed path): .../seed_<seed>/epoch_NNNN.pt."""
         return self.train_seed_dir(batch_id, seed) / f"epoch_{int(epoch):04d}.pt"
 
     def train_campaign_receipt_path(self, batch_id: str) -> Path:
@@ -152,7 +177,7 @@ class GenerationLayout:
         return self.train_batch_dir(batch_id) / "train_info.json"
 
     def train_seed_receipt_path(self, batch_id: str, seed: int) -> Path:
-        """One seed's result: seed_result.json."""
+        """One seed's result (legacy seed path): seed_result.json."""
         return self.train_seed_dir(batch_id, seed) / "seed_result.json"
 
     def model_version_dir(self, version: str) -> Path:
@@ -214,6 +239,14 @@ def _normalize_batch_id(batch_id: str) -> str:
     if not bid or "/" in bid or ".." in bid:
         raise GenerationError(f"invalid batch_id: {batch_id!r}")
     return bid
+
+
+def _normalize_run_id(run_id: str) -> str:
+    """Path-safe run_id segment (no slashes); full policy check is training assert_policy."""
+    rid = str(run_id).strip()
+    if not rid or "/" in rid or "\\" in rid or ".." in rid:
+        raise GenerationError(f"invalid run_id: {run_id!r}")
+    return rid
 
 
 def normalize_model_version(version: str) -> str:
