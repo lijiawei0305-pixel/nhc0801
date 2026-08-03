@@ -183,27 +183,46 @@ models/v0.1/
   card.svg      # 发布图（给人看）
 ```
 
-**每次发布新版本必须生成一张特征卡片**（`card.svg`）。  
-卡片要同时覆盖：领域里 ML 力场常用指标，以及本项目科学路线上的结果——**不能只有帧级 loss**。
+**每次发布新版本必须生成一张特征卡片**（`card.svg`），并尽量贴进 README 或 release 说明。
 
-### 卡片上展示哪些特征（设计说明）
+### 示例卡片（版式示意）
 
-结合 AIMNet2 / MLFF 文献里常见的 **energy–force（EF）精度**，以及本仓库 mindmap 的 **完整几何 + 脱质子标签** 口径，每张卡分六块：
+下面这张是 **版式示例**（数字多为占位；真正 v0.1 发布后换成带实测指标的卡片）：
 
-| 区块 | 特征 | 为何需要 |
+![Model card example v0.1](assets/model_card_example.svg)
+
+### 训练有没有问题？——没有，这是 mindmap 故意的分工
+
+很多人以为「训练 loss 最低的 checkpoint = 最终模型」。  
+**本项目不是这样设计的，这不代表训练方式错了。**
+
+| 阶段 | 在干什么 | 算不算「选最终模型」 |
 | --- | --- | --- |
-| **Identity** | 版本 `v0.N`、标题、基座 `aimnet2_wb97m_d3_0`、路径 `models/v0.N/model.pt` | 一眼认出是哪一版 |
-| **Chemistry & reference** | 反应 `NHC-H+ → NHC + H+`；参考 DFT ωB97M-D3(BJ)/def2-TZVPP；学短程残差 E/F；标签只用 DFT | 化学任务与老师级别写死，避免和别的栈混淆 |
-| **Training** | 来自 `train_g00N`、root/帧数、seed、epoch、**由科学 Validation 选模** | 对应固定顺序 g001→v0.1；强调不是 quick-val 终选 |
-| **Frame metrics（仅筛选用）** | 能量 MAE/RMSE、力 MAE/RMSE | MLFF 社区标配；**只作监测/短名单，不写「最终冠军」** |
-| **Scientific route（选模依据）** | ΔE_deprot 相对 DFT 参考的误差；相对 **Epoch-0** 的 parent 步数/墙钟比；handoff 通过率；拓扑/身份通过率；评估了几个 Val root | 本项目真正关心：handoff 后完整 DFT 路线是否更省、标签是否站得住 |
-| **Provenance** | 权重 SHA256 前缀、备注 | 可核对、可复现 |
+| **训练** | 在 Train 帧上拟合能量/力（短程残差） | 否，只是在学 |
+| **快速 Validation（帧 loss）** | 看固定 Val 帧上的 E/F 误差，防过拟合、筛短名单 | **否**，mindmap 写明不得终选 |
+| **完整科学 Validation** | AIMNet2 → GAU_LOOSE → handoff → 完整 DFT → 脱质子标签，再和参考比 | **是**，在这里定 v0.N |
 
-实现：`src/nhc_deprot/training/model_card.py`；登记发布时默认写出卡片。本地可演示：
+所以：
+
+- **用能量/力 loss 训练** → 正确，和 AIMNet2 / ML 力场常规一致。  
+- **不拿帧 loss 当最终冠军** → 也正确，因为你们关心的是 **脱质子标签** 和 **handoff 后 DFT 优化是否更省**，这些帧 loss 本身反映不了。  
+- 卡片上既写 Frame metrics、又写 Scientific route，是为了 **一张图说全**，不是说「你们训练错了」。
+
+### 卡片六块是什么意思（给读 README 的人）
+
+| 区块 | 写什么 | 一句话 |
+| --- | --- | --- |
+| **Identity** | v0.N、基座模型、文件路径 | 这是哪一版 |
+| **Chemistry & reference** | 反应、DFT 级别、学什么、标签从哪来 | 化学任务与老师协议 |
+| **Training** | train_g00N、数据量、seed/epoch、谁有权选模 | 从哪次训练来、怎么定稿 |
+| **Frame metrics** | 能量/力 MAE·RMSE | 训练是否正常（筛选用） |
+| **Scientific route** | ΔE_deprot 误差、相对 Epoch-0 的步数/时间、handoff/拓扑通过率 | 科学上好不好用（选模用） |
+| **Provenance** | SHA 前缀、备注 | 能否核对文件 |
+
+实现：`src/nhc_deprot/training/model_card.py`。登记 `models/v0.N` 时默认写出 `card.svg`。演示：
 
 ```bash
 PYTHONPATH=src python scripts/nhc0801_render_model_card.py --demo --version v0.1
-# → runs/.../models/v0.1/card.svg
 ```
 
 ---
@@ -216,12 +235,12 @@ PYTHONPATH=src python scripts/nhc0801_render_model_card.py --demo --version v0.1
 | `AGENTS.md` | 协作与命名约定 |
 | `PHASE_STATUS.md` | 阶段状态 |
 | `progress.md` | 各组 teacher / Epoch-0 进度 |
+| `assets/` | README 用图（如模型卡片示例） |
 | `src/nhc_deprot/` | 库代码 |
 | `scripts/` | CLI / 作业入口 |
 | `tests/` | 合成 fixture 单测 |
 
 科学口径以 `mindmap.md` 为准。
----
 
 ## 本地开发
 
