@@ -76,16 +76,18 @@ def test_multi_seed_dry_run_retains_all_outcomes(tmp_path: Path) -> None:
             meta_path = Path(ckpt["path"])
             assert meta_path.is_file()
 
-    receipt = json.loads(
-        layout.train_campaign_receipt_path("g001").read_text(encoding="utf-8")
-    )
+    run_id = cfg.run_id
+    run_dir = layout.train_batch_run_dir("g001", run_id)
+    receipt = json.loads((run_dir / "train_result.json").read_text(encoding="utf-8"))
     assert receipt["final_model_selected"] is False
     assert receipt["batch_id"] == "g001"
-    assert receipt["product_rel"] == "train_g001"
-    # products under train_g001/seed_*/epoch_*.meta.json — not bare train/
-    seed_dir = layout.train_seed_dir("g001", 20260730)
+    assert receipt["run_id"] == run_id
+    assert receipt["product_rel"] == f"train_g001/runs/{run_id}"
+    # products under train_g001/runs/<run_id>/seed_*/ — not legacy seed_* or bare train/
+    seed_dir = layout.train_run_seed_dir("g001", run_id, 20260730)
     assert seed_dir.is_dir()
     assert (seed_dir / "seed_result.json").is_file()
+    assert not layout.train_seed_dir("g001", 20260730).exists()
     assert not (layout.train_dir / "campaign_receipt.json").exists()
 
 
