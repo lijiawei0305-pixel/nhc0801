@@ -169,24 +169,21 @@ flowchart TB
 
 | 路径 | 作用 |
 | --- | --- |
-| `mindmap.md` | 科学流水线真值 |
-| `AGENTS.md` | 协作与落盘约定 |
+| `mindmap.md` | 科学流程真值（方框图） |
+| `AGENTS.md` | 协作与实现约定 |
 | `PHASE_STATUS.md` | 阶段状态 |
-| `progress.md` | g00N teacher / Epoch-0 进度 |
-| `docs/contracts/` | GAU_LOOSE、数值标定、调度等合同 |
-| `docs/evidence/` | pilot 证据 |
+| `progress.md` | 各组 teacher / Epoch-0 进度 |
 | `src/nhc_deprot/` | 库代码 |
 | `scripts/` | CLI / 作业入口 |
 | `tests/` | 合成 fixture 单测 |
 
-科学口径以 `mindmap.md` 与冻结合同为准；实现与协作细节以 `AGENTS.md` 为准。
+科学口径以 `mindmap.md` 为准。
 
 ---
 
 ## 本地开发
 
 ```bash
-cd /path/to/nhc-deprot
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 PYTHONPATH=src python -m pytest -q
@@ -199,17 +196,3 @@ PYTHONPATH=src python -m nhc_deprot.pipeline.mindmap_orchestrator
 ```
 
 AIMNet2 与量子化学计算使用**相互独立的软件环境**，不要混用同一环境。
-
----
-
-## 相关文档
-
-| 问题 | 文档 |
-| --- | --- |
-| 步骤细节 | `mindmap.md` |
-| 协作与实现约定 | `AGENTS.md` |
-| 算到哪了 | `progress.md`、`PHASE_STATUS.md` |
-| g00N / Epoch-0 命名 | `docs/NHC0801_命名与进度指南.md` |
-| 选模数值规则 | `docs/contracts/NUMERIC_CALIBRATION_V001.yaml` |
-
-内部科研代码。改科学口径先改 mindmap 与合同，再动实现。

@@ -10,6 +10,11 @@ __pycache__/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
+
+# local-only notes and project docs (not published to GitHub)
+RETRO.md
+docs/
+
 # large runtime artifacts (stay on server or local private)
 data/raw_large/
 data/teacher/
