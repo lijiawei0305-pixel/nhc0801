@@ -1,7 +1,8 @@
 """Canonical experimental artifact names under runs/<generation>/.
 
 Policy (AGENTS.md Experimental data naming):
-  - Product dirs: teacher_gpu_g00N/, epoch0_val_batches/g00N/, train_g00N/
+  - Product dirs: teacher_gpu_g00N/, epoch0_val_batches/g00N/, train_g00N/, models/v0.1/
+  - Released weights: models/vX.Y/model.pt (short version tag; no long English stems)
   - Log basenames: prefer group-scoped stable names; accept legacy *02c* as read aliases
   - Engineering module names (gpu_autofill) may differ from user-facing g00N labels
 
@@ -55,6 +56,22 @@ def train_checkpoint_weight_name(epoch: int) -> str:
 def train_checkpoint_meta_name(epoch: int) -> str:
     return f"{train_checkpoint_stem(epoch)}.meta.json"
 
+
+# --- Released AIMNet2 versions (selected after train + scientific selection) ---
+# Human: "v0.1" / "v0.2"  →  models/v0.1/model.pt
+MODELS_DIR: Final = "models"
+MODEL_WEIGHT_BASENAME: Final = "model.pt"  # always this name inside a version folder
+MODEL_INFO_BASENAME: Final = "info.json"
+
+
+def model_version_dirname(version: str) -> str:
+    """Folder name under models/, e.g. v0.1 (caller should normalize first)."""
+    s = str(version).strip()
+    if not s.startswith("v"):
+        s = f"v{s}"
+    return s.lower()
+
+
 # --- Teacher wave (g001 pilot CPU wave historically trial 02c) ---
 TEACHER_WAVE_LOG: Final = "teacher_wave_g001.out"
 TEACHER_WAVE_LOG_LEGACY: Final = (
@@ -95,7 +112,16 @@ TRAIN_BANNED_WRITE_NAMES: Final = (
     "checkpoints",
     "best.pt",
     "latest.pt",
-    "model.pt",
+)
+
+# Released model basenames must stay short — ban long English stems as the product name
+MODEL_BANNED_BASENAMES: Final = (
+    "best.pt",
+    "latest.pt",
+    "final.pt",
+    "selected.pt",
+    "finetuned.pt",
+    "aimnet2_finetuned.pt",
 )
 
 

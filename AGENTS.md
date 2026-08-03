@@ -77,47 +77,71 @@ Conflict order: **mindmap.md** → **`docs/contracts/COMPUTE_DISPATCH_V001.md`**
 | --- | --- | --- |
 | 老师帧 | **g00N teacher** | **`teacher_gpu_g00N/`** |
 | Epoch-0 基线 | **g00N Epoch-0** | **`epoch0_val_batches/g00N/`**（其下可有 `epoch0/`、`logs/`） |
-| AIMNet2 微调 | **g00N train** / **g00N 微调** | **`train_g00N/`**（与 `teacher_gpu_g00N/` 同扁平风格） |
+| AIMNet2 训练过程 | **g00N train** | **`train_g00N/`**（中间 checkpoint，按 seed/epoch） |
+| **发布模型版本** | **v0.1 / v0.2 …** | **`models/v0.1/model.pt`**（短版本号；权重固定叫 `model.pt`） |
 | generation 总目录 | — | **`runs/nhc0801-g001/`**（勿简写成 `runs/g001/`） |
 
 **强制同构示例（小白一眼能对上号）：**
 
 ```text
 teacher_gpu_g001/     ← 第 1 组的老师数据
-teacher_gpu_g002/     ← 第 2 组的老师数据
-epoch0_val_batches/g001/   ← 第 1 组 Epoch-0
-train_g001/           ← 第 1 组的模型微调结果
-train_g002/           ← 第 2 组的模型微调结果（若单独开训）
+train_g001/           ← 第 1 组训练过程（很多中间 .pt）
+models/
+  v0.1/               ← 发布版 0.1（选模后的正式模型）
+    model.pt
+    info.json
+  v0.2/
+    model.pt
+    info.json
 ```
 
-**微调目录里有什么（强制）：**
+**两层不要混：**
+
+| 层 | 是什么 | 路径 |
+| --- | --- | --- |
+| 训练过程 | 某个 seed、某轮 epoch 的草稿权重 | `train_g001/seed_…/epoch_0200.pt` |
+| **发布版本** | 对外/对下游使用的正式模型 | **`models/v0.1/model.pt`** |
+
+对人只说 **v0.1**，不要说一长串英文文件名。  
+`info.json` 里记下：来自哪个 `train_g00N` / seed / epoch、权重 sha256。
+
+**训练过程目录（`train_g00N/`）：**
 
 ```text
 train_g001/
-  train_info.json              # 这次训了谁、用什么设定（可选）
-  train_result.json            # 整次训练总结果（多种子汇总）
-  logs/
-    train_g001.out             # 运行日志
-  seed_20260730/               # 一个随机种子跑出来的一条训练线
-    seed_result.json           # 这条线的结果
-    epoch_0005.pt              # 第 5 轮保存的模型权重
-    epoch_0005.meta.json       # 同上轮的文字说明（loss 等）
-    epoch_0200.pt              # 第 200 轮
+  train_info.json
+  train_result.json
+  logs/train_g001.out
+  seed_20260730/
+    seed_result.json
+    epoch_0005.pt
+    epoch_0005.meta.json
+    epoch_0200.pt
     epoch_0200.meta.json
 ```
 
-| 正确 | 错误（禁止新写） |
+**发布版本目录（强制短名）：**
+
+```text
+models/v0.1/model.pt      ← 唯一权重名
+models/v0.1/info.json
+models/v0.2/model.pt
+```
+
+| 正确 | 错误 |
 | --- | --- |
-| `train_g001/seed_20260730/epoch_0200.pt` | `train/best.pt`、`latest.pt`、`ckpts/model.pt` |
-| `train_g001/train_result.json` | 无组号的裸 `train/` 当新结果主目录 |
-| 结果 JSON 里有 **`batch_id`: `g001`** | 只有 seed/epoch、看不出是哪一组 |
+| `models/v0.1/model.pt` | `aimnet2_wb97m_ft_g001_seed_…_epoch_0200.pt` |
+| 版本号 `v0.1` / `0.1` | `best.pt`、`latest.pt`、`final_finetuned.pt` |
+| `train_g001/…/epoch_0200.pt`（过程） | 把过程文件直接当发布名到处拷 |
 
-旧 pilot 的 **`train/`**、曾用过的 **`train_batches/g00N/`**：**只读兼容**；**新微调只写 `train_g00N/`**。### 3) 目录 / 收据内部字段
+旧 pilot 的 **`train/`**、**`train_batches/`**：**只读**；新训练写 **`train_g00N/`**；新发布写 **`models/vX.Y/`**。
 
-- 收据 JSON 必须可定位组号：含 **`batch_id`**（`g00N`）和/或写在 **规范路径** 下。  
-- 禁止同一科学对象多套「官方」路径并存写；兼容旧路径时 **只允许只读 fallback 或 symlink**，新写只进规范路径。  
-- 日志/回执文件名优先带组号：如 `job_g003.out`、`g003_epoch0_val_receipt.json`；避免仅 `02c` / `side` 当唯一身份。
+### 3) 目录 / 收据内部字段
 
+- 训练收据必须可定位组号：含 **`batch_id`**（`g00N`）和/或写在规范路径下。  
+- 发布 `info.json` 必须含 **`version`**（`v0.1`）及来源 checkpoint 路径。  
+- 禁止同一科学对象多套「官方」路径并存写；兼容旧路径时 **只允许只读 fallback**。  
+- 日志/回执文件名优先带组号；发布模型只用短版本号，避免 `02c` / `side` 当唯一身份。
 ### 4) 工程模块名 vs 产品名（必须分清）
 
 | 工程标识（可留在代码/state） | 对外 / 产品命名（必须用 g00N） |
@@ -134,18 +158,21 @@ train_g001/
 | `teacher_gpu_side/` | `teacher_gpu_g002/` |
 | `teacher_cpu/`、`teacher_gpu/`（无组号） | `teacher_gpu_g00N/` |
 | 顶层 `epoch0/` 作为 g001 专用规范位 | `epoch0_val_batches/g001/` |
-| 顶层 `train/` 或 `train_batches/` 作为新微调规范位 | `train_g00N/` |
-| `best.pt` / `latest.pt` / 无 epoch 编号的权重 | `epoch_NNNN.pt`（四位） |
-| 「Autofill 批 / 扩展批 / 侧线 e0」 | **g00N** / **g00N Epoch-0** / **g00N train** |
+| 顶层 `train/` 或 `train_batches/` 作为新训练规范位 | `train_g00N/` |
+| 过程权重：`best.pt` / `latest.pt` | `epoch_NNNN.pt`（四位轮次） |
+| 发布权重：长英文后缀文件名 | **`models/v0.1/model.pt`** |
+| 「Autofill 批 / 扩展批 / 侧线 e0」 | **g00N** / **g00N Epoch-0** / **g00N train** / **v0.1** |
 | `runs/g001/` | `runs/nhc0801-g001/` |
 
 ### 6) 写代码 / 写文档时的自检
 
-1. 新产物路径是否含 **`g00N` 组号**？  
-2. teacher → **`teacher_gpu_g00N/`**？Epoch-0 → **`epoch0_val_batches/g00N/`**？微调 → **`train_g00N/`**？  
-3. 模型文件是否为 **`seed_<数字>/epoch_NNNN.pt`**（NNNN 是训练轮次，不是日期）？  
-4. 对人说明是否 **零 Autofill / 零 side / 零无名 train/**？  
-5. 文件名是否用 **result / info** 等直白词，而不是只有 receipt/campaign 黑话？---
+1. 训练过程是否在 **`train_g00N/`**？发布是否在 **`models/vX.Y/model.pt`**？  
+2. 对人是否只说 **v0.1**，而不是一长串英文文件名？  
+3. 过程 checkpoint 是否为 **`seed_<数字>/epoch_NNNN.pt`**？  
+4. teacher / Epoch-0 是否仍用 **`teacher_gpu_g00N/`**、**`epoch0_val_batches/g00N/`**？  
+5. 是否零 Autofill / 零 side / 零把 `best.pt` 当发布名？
+
+---
 
 ## Documentation rules（写文档规矩）
 

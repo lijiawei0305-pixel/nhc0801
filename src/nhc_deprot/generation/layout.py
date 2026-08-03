@@ -31,6 +31,7 @@ PARALLEL_STRATEGY: Final = "S"
 # Teacher groups: teacher_gpu_g00N/ (uniform; g001 pilot included)
 # Epoch-0 groups: epoch0_val_batches/g00N/
 # Fine-tune groups: train_g00N/ (same flat style as teacher_gpu_g00N/)
+# Released model versions: models/v0.1/model.pt (short version tags, not long English stems)
 GENERATION_SUBDIRS: Final = (
     "meta",
     "resources",
@@ -42,6 +43,7 @@ GENERATION_SUBDIRS: Final = (
     "train_g001",
     "train_g001/logs",
     "train",  # legacy pilot only; new writes use train_g00N/
+    "models",
     "sci_val",
     "freeze",
     "logs",
@@ -53,6 +55,8 @@ G001_EPOCH0_REL: Final = "epoch0_val_batches/g001/epoch0"
 G001_TEACHER_REL: Final = "teacher_gpu_g001"
 # Standard human name: "g001 train" / "g001 微调" → train_g001/
 G001_TRAIN_REL: Final = "train_g001"
+# Standard human name: "v0.1" → models/v0.1/model.pt
+MODELS_REL: Final = "models"
 
 
 class GenerationError(RuntimeError):
@@ -74,6 +78,7 @@ class GenerationLayout:
     datasets_dir: Path
     epoch0_dir: Path
     train_dir: Path
+    models_dir: Path
     sci_val_dir: Path
     freeze_dir: Path
     logs_dir: Path
@@ -151,6 +156,22 @@ class GenerationLayout:
         """One seed's result: seed_result.json."""
         return self.train_seed_dir(batch_id, seed) / "seed_result.json"
 
+    def model_version_dir(self, version: str) -> Path:
+        """Released model version folder: models/v0.1/.
+
+        Human name is just **v0.1** (or v0.2, …). Weight file is always ``model.pt``.
+        """
+        ver = normalize_model_version(version)
+        return self.models_dir / ver
+
+    def model_weight_path(self, version: str) -> Path:
+        """Canonical weight file: models/v0.1/model.pt (never a long English basename)."""
+        return self.model_version_dir(version) / "model.pt"
+
+    def model_info_path(self, version: str) -> Path:
+        """Provenance for a released version: models/v0.1/info.json."""
+        return self.model_version_dir(version) / "info.json"
+
     def resolve_train_batch_dir_for_read(self, batch_id: str) -> Path:
         """Prefer train_g00N when it has products; else legacy train/ for g001.
 
@@ -194,6 +215,27 @@ def _normalize_batch_id(batch_id: str) -> str:
     if not bid or "/" in bid or ".." in bid:
         raise GenerationError(f"invalid batch_id: {batch_id!r}")
     return bid
+
+
+def normalize_model_version(version: str) -> str:
+    """Normalize a short model version tag to ``vMAJOR.MINOR`` (e.g. v0.1, v0.2).
+
+    Accepts ``0.1``, ``v0.1``, ``V0.1``. Rejects long English stems and path junk.
+    """
+    raw = str(version).strip()
+    if not raw or "/" in raw or "\\" in raw or ".." in raw:
+        raise GenerationError(f"invalid model version: {version!r}")
+    s = raw.lower()
+    if s.startswith("v"):
+        s = s[1:]
+    parts = s.split(".")
+    if len(parts) != 2 or not all(p.isdigit() for p in parts):
+        raise GenerationError(
+            f"model version must look like 0.1 or v0.1, got {version!r}"
+        )
+    # keep decimal form without stripping meaningful zeros in minor? int is fine for 0.1
+    major, minor = int(parts[0]), int(parts[1])
+    return f"v{major}.{minor}"
 
 
 @dataclass
@@ -246,6 +288,7 @@ def resolve_layout(
         # g001 Epoch-0: same pattern as g002/g003… (epoch0_val_batches/g001/)
         epoch0_dir=gen / "epoch0_val_batches" / "g001" / "epoch0",
         train_dir=gen / "train",
+        models_dir=gen / "models",
         sci_val_dir=gen / "sci_val",
         freeze_dir=gen / "freeze",
         logs_dir=gen / "logs",

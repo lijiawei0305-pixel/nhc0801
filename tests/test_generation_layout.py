@@ -12,8 +12,10 @@ from nhc_deprot.generation.layout import (
     GenerationError,
     init_generation,
     load_generation_meta,
+    normalize_model_version,
     resolve_layout,
 )
+from nhc_deprot.training.model_versions import list_model_versions, register_model_version
 
 
 def test_init_generation_tree(tmp_path: Path) -> None:
@@ -74,3 +76,33 @@ def test_train_batch_paths(tmp_path: Path) -> None:
     # canonical train_g001 with seed_* preferred
     (layout.train_batch_dir("g001") / "seed_2").mkdir()
     assert layout.resolve_train_batch_dir_for_read("g001") == layout.train_batch_dir("g001")
+
+
+def test_model_version_paths_and_register(tmp_path: Path) -> None:
+    layout, _, _ = init_generation(nhc0801_root=tmp_path / "NHC0801")
+    assert normalize_model_version("0.1") == "v0.1"
+    assert normalize_model_version("v0.2") == "v0.2"
+    with pytest.raises(GenerationError):
+        normalize_model_version("aimnet2_finetuned_best")
+
+    assert layout.models_dir.name == "models"
+    assert layout.model_version_dir("0.1").name == "v0.1"
+    assert layout.model_weight_path("v0.1").name == "model.pt"
+    assert layout.model_info_path("0.1").name == "info.json"
+
+    src = tmp_path / "src.pt"
+    src.write_bytes(b"fake-weights")
+    info = register_model_version(
+        layout=layout,
+        version="0.1",
+        source_weight=src,
+        train_batch_id="g001",
+        seed=20260730,
+        epoch=200,
+        notes=["demo"],
+    )
+    assert info["version"] == "v0.1"
+    assert info["weight_basename"] == "model.pt"
+    assert layout.model_weight_path("v0.1").is_file()
+    assert layout.model_weight_path("v0.1").read_bytes() == b"fake-weights"
+    assert list_model_versions(layout) == ["v0.1"]
