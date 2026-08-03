@@ -42,18 +42,18 @@
 | --- | --- |
 | 泛函 / 基组 | ωB97M-D3(BJ) / def2-TZVPP |
 | 积分格点 | grid level 4 |
-| SCF 收敛 | $10^{-9}$ |
+| SCF 收敛 | 1×10⁻⁹ |
 
 AIMNet2 在自身势能面上优化时，采用 geomeTRIC 的 **GAU_LOOSE** 收敛阈值（五条同时满足），并配合 ASE LBFGS：
 
 | 准则 | 阈值 |
 | --- | --- |
-| 能量变化 | $\lvert \Delta E \rvert \le 10^{-6}$ Eh |
-| 梯度 RMS | $\le 1.7 \times 10^{-3}$ Eh/Bohr |
-| 梯度最大值 | $\le 2.5 \times 10^{-3}$ Eh/Bohr |
-| 位移 RMS | $\le 6.7 \times 10^{-3}$ Å |
-| 位移最大值 | $\le 1.0 \times 10^{-2}$ Å |
-| ASE LBFGS | `fmax = 0.10` eV/Å，最多 100 步 |
+| 能量变化 | \|ΔE\| ≤ 1×10⁻⁶ Eh |
+| 梯度 RMS | ≤ 1.7×10⁻³ Eh/Bohr |
+| 梯度最大值 | ≤ 2.5×10⁻³ Eh/Bohr |
+| 位移 RMS | ≤ 6.7×10⁻³ Å |
+| 位移最大值 | ≤ 1.0×10⁻² Å |
+| ASE LBFGS | fmax = 0.10 eV/Å，最多 100 步 |
 
 收敛后检查电荷、多重度、质子身份与拓扑，再将几何 **按字节原样** 交给同一 DFT 级别做完整优化与最终单点（不是只做单点）。
 
@@ -77,7 +77,8 @@ E_{\mathrm{short}} = E_{\mathrm{DFT,total}} - E_{\mathrm{D3}}, \quad
 \mathbf{F}_{\mathrm{short}} = \mathbf{F}_{\mathrm{DFT,total}} - \mathbf{F}_{\mathrm{D3}}
 ```
 
-其中 $E_{\mathrm{DFT,total}}$ / $\mathbf{F}_{\mathrm{DFT,total}}$ 为 ωB97M-D3(BJ)/def2-TZVPP 总能量与力。
+式中 DFT 总能量与力均为 ωB97M-D3(BJ)/def2-TZVPP 结果。
+
 ---
 
 ## 方法总览
@@ -197,12 +198,7 @@ PYTHONPATH=src python -m pytest -q
 PYTHONPATH=src python -m nhc_deprot.pipeline.mindmap_orchestrator
 ```
 
-服务器上 AIMNet2 与 PySCF 分环境使用：
-
-```bash
-source $WJW/env/envs/mlff.sh    # AIMNet2
-source $WJW/env/envs/molenv.sh  # PySCF
-```
+AIMNet2 与量子化学计算使用**相互独立的软件环境**，不要混用同一环境。
 
 ---
 
