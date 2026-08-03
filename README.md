@@ -51,17 +51,17 @@ flowchart TB
   classDef gate fill:#fff7ed,stroke:#c2410c,color:#7c2d12
   classDef seal fill:#fef2f2,stroke:#b91c1c,color:#7f1d1d
 
-  A[冻结 root · 划分 Train/Val/Test] --> B[ωB97M-D3(BJ)/def2-TZVPP 老师轨迹]
-  B --> C[Train 帧]
-  B --> D[Val]
-  B --> E[Test 密封]
-  D --> F[Epoch-0 基线]
-  C --> G[微调 AIMNet2]
-  G --> H[科学 Validation 选模]
+  A["冻结 root / 划分 Train Val Test"] --> B["DFT 老师轨迹"]
+  B --> C["Train 帧"]
+  B --> D["Val"]
+  B --> E["Test 密封"]
+  D --> F["Epoch-0 基线"]
+  C --> G["微调 AIMNet2"]
+  G --> H["科学 Validation 选模"]
   F --> H
   D --> H
-  H --> I[发布 models/v0.N]
-  I --> J[Final Test 一次]
+  H --> I["发布 models v0.N"]
+  I --> J["Final Test 一次"]
   E --> J
 
   class A,B,C,D,E data
