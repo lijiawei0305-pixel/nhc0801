@@ -49,11 +49,10 @@ def weighted_batch_terms(predicted: dict[str, Any], truth: dict[str, Any]) -> di
     if batch_size <= 0 or int(weights.shape[0]) != batch_size:
         raise WeightedLossError("sample_weight shape does not match the batch")
     force_error_squared = ((predicted["forces"] - truth["forces"]) ** 2).reshape(batch_size, -1)
-    if batch_size == 1:
-        force_per_sample = force_error_squared.mean(-1)
-    else:
-        component_count = int(force_error_squared.shape[-1])
-        force_per_sample = force_error_squared.mean(-1) * (natom.reshape(-1) / component_count)
+    # Same scaling for B=1 and B>1: size-grouped loaders emit singleton batches,
+    # and omitting natom/component_count there understated force loss by ~natom.
+    component_count = int(force_error_squared.shape[-1])
+    force_per_sample = force_error_squared.mean(-1) * (natom.reshape(-1) / component_count)
     return {
         "energy_numerator": (weights * energy_per_sample).sum(),
         "forces_numerator": (weights * force_per_sample).sum(),
