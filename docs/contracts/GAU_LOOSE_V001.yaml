@@ -1,15 +1,12 @@
-schema: nhc0801-aimnet2-gau-loose-v002
-supersedes: nhc0801-aimnet2-gau-loose-v001
+schema: nhc0801-aimnet2-gau-loose-v001
 source_schema: phase9b-aimnet2-gau-loose-v001
 science_pilot_only: true
 project: nhc0801
 production_accepted: false
 
-# V002 delta vs V001 (user-authorized 2026-08-04):
-#   ase_lbfgs.maximum_steps: 100 → 250
-# All five surface criteria + ASE fmax 0.10 + identity gates unchanged.
-# Rationale: measured worst-case ~147 AIMNet2 steps on pilot Val neutrals;
-# budget-only change; criteria not weakened; AIMNet2 step cost negligible.
+# Sole GAU_LOOSE contract for NHC0801.
+# ASE LBFGS step budget: 250 (five surface criteria + fmax 0.10 unchanged).
+# Pilot evidence: Val neutrals often need >100 steps; worst-case ~147–196.
 
 profile: GAU_LOOSE
 profile_source:
