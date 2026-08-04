@@ -33,7 +33,12 @@ from nhc_deprot.data.paths import TRAIN_ROOTS
 from nhc_deprot.generation.layout import ensure_generation_tree, resolve_layout
 from nhc_deprot.pipeline.epoch0_runner import Epoch0Config, run_epoch0_campaign
 from nhc_deprot.pipeline.live_epoch0 import LiveAimnet2GauLooseEngine, LiveParentP01Engine, load_xyz
-from nhc_deprot.pipeline.scientific_validation import FrozenEndpointGeometry
+from nhc_deprot.pipeline.parent_handoff import load_gau_loose_profile
+from nhc_deprot.pipeline.scientific_validation import (
+    FrozenEndpointGeometry,
+    assemble_root_label,
+    run_endpoint_route,
+)
 
 OFFICIAL_WEIGHT = Path("/home/plab/.cache/aimnet/aimnet2_wb97m_d3_0.pt")
 DEFAULT_GOLD = Path("/home/plab/test/WJW/data/runs/mol_gold/xyz")
@@ -109,6 +114,232 @@ def load_geo(root_id: str, endpoint: str, gold_dirs: Sequence[Path]) -> FrozenEn
     )
 
 
+def _parent_engine(
+    *,
+    max_steps: int,
+    parent_backend: str,
+    cuda_device: int | None,
+) -> LiveParentP01Engine:
+    parent_kw: dict = {"max_steps": max_steps}
+    if parent_backend == "gpu":
+        if cuda_device is None:
+            raise ValueError("gpu parent requires cuda_device")
+        parent_kw["backend"] = "gpu"
+        parent_kw["cuda_device"] = int(cuda_device)
+        parent_kw["host_threads"] = 2
+    else:
+        parent_kw["backend"] = "cpu"
+        parent_kw["host_threads"] = 8
+    return LiveParentP01Engine(**parent_kw)
+
+
+def run_e0_single_endpoint(
+    *,
+    nhc0801_root: Path,
+    generation_id: str,
+    batch_id: str,
+    root_id: str,
+    endpoint: str,
+    max_steps: int = 100,
+    weight: Path = OFFICIAL_WEIGHT,
+    gold_dirs: Sequence[Path] | None = None,
+    parent_backend: str = "cpu",
+    cuda_device: int | None = None,
+) -> dict:
+    """Run Epoch-0 pure+e0 routes for **one** endpoint on one GPU (4-way parallel).
+
+    Writes ``epoch0/<root>/<endpoint>_shard.json``. When both cation and neutral
+    shards exist, assembles ``epoch0_root_receipt.json`` for that root.
+    """
+    roots = refuse_train_roots([root_id])
+    rid = roots[0]
+    ep = str(endpoint).strip().lower()
+    if ep not in {"cation", "neutral"}:
+        raise E0ValOnlyError(f"endpoint must be cation|neutral, got {endpoint!r}")
+    bid = normalize_epoch0_batch_id(batch_id)
+    golds = list(gold_dirs or (DEFAULT_GOLD, *ALT_GOLD))
+    layout = resolve_layout(generation_id=generation_id, nhc0801_root=nhc0801_root)
+    ensure_generation_tree(layout, exist_ok=True)
+    batch_root = layout.epoch0_batch_root(bid)
+    work_layout = replace(
+        layout,
+        epoch0_dir=batch_root / "epoch0",
+        logs_dir=batch_root / "logs",
+    )
+    work_layout.epoch0_dir.mkdir(parents=True, exist_ok=True)
+    work_layout.logs_dir.mkdir(parents=True, exist_ok=True)
+
+    geo = load_geo(rid, ep, golds)
+    gau = load_gau_loose_profile()
+    aim = LiveAimnet2GauLooseEngine(weight_path=weight)
+    parent = _parent_engine(
+        max_steps=max_steps, parent_backend=parent_backend, cuda_device=cuda_device
+    )
+    cfg = Epoch0Config(validation_roots=(rid,))
+
+    print(
+        f"[e0-shard] {bid} root={rid} endpoint={ep} "
+        f"cuda={cuda_device} parent={parent_backend}",
+        flush=True,
+    )
+    pure_r = run_endpoint_route(
+        geometry=geo,
+        route_kind="pure_pyscf_reference",
+        checkpoint_id="pure-pyscf-reference",
+        profile=gau,
+        aimnet2=None,
+        parent=parent,
+    )
+    e0_r = run_endpoint_route(
+        geometry=geo,
+        route_kind="epoch_zero",
+        checkpoint_id=cfg.checkpoint_id,
+        profile=gau,
+        aimnet2=aim,
+        parent=parent,
+    )
+    root_dir = work_layout.epoch0_dir / rid
+    root_dir.mkdir(parents=True, exist_ok=True)
+    shard = {
+        "schema": "nhc0801-epoch0-endpoint-shard-v1",
+        "batch_id": bid,
+        "root_id": rid,
+        "endpoint": ep,
+        "cuda_device": cuda_device,
+        "parent_backend": parent_backend,
+        "created_at_utc": _utc(),
+        "pure_pyscf_reference": pure_r.as_dict(),
+        "epoch0_route": e0_r.as_dict(),
+        "status": "PASS" if (not pure_r.catastrophic and not e0_r.catastrophic) else "FAILED",
+    }
+    shard_path = root_dir / f"{ep}_shard.json"
+    write_json(shard_path, shard, overwrite=True)
+    print(f"[e0-shard] wrote {shard_path} status={shard['status']}", flush=True)
+
+    merge = try_merge_root_shards(
+        work_layout.epoch0_dir / rid,
+        root_id=rid,
+        checkpoint_id=cfg.checkpoint_id,
+        official_weight_sha256=cfg.official_weight_sha256,
+    )
+    if merge is not None:
+        print(
+            f"[e0-shard] merged root receipt status={merge.get('status')} path={merge.get('path')}",
+            flush=True,
+        )
+    return {"shard": shard, "shard_path": str(shard_path), "root_merge": merge}
+
+
+def try_merge_root_shards(
+    root_dir: Path,
+    *,
+    root_id: str,
+    checkpoint_id: str,
+    official_weight_sha256: str,
+) -> dict | None:
+    """If both endpoint shards exist, write epoch0_root_receipt.json."""
+    from nhc_deprot.contracts.parent_protocol import PROTOCOL_SHA256
+    from nhc_deprot.pipeline.scientific_validation import EndpointRouteReceipt
+
+    cat_p = root_dir / "cation_shard.json"
+    neu_p = root_dir / "neutral_shard.json"
+    if not (cat_p.is_file() and neu_p.is_file()):
+        return None
+
+    def _ep(payload: dict, key: str) -> EndpointRouteReceipt:
+        raw = payload[key]
+        return EndpointRouteReceipt(
+            root_id=str(raw["root_id"]),
+            endpoint=str(raw["endpoint"]),
+            route_kind=str(raw["route_kind"]),
+            checkpoint_id=str(raw["checkpoint_id"]),
+            stages_completed=list(raw.get("stages_completed") or []),
+            aimnet2_converged=bool(raw.get("aimnet2_converged", False)),
+            aimnet2_steps=int(raw.get("aimnet2_steps") or 0),
+            handoff_classification=raw.get("handoff_classification"),
+            continue_parent_optimization=bool(
+                raw.get("continue_parent_optimization", False)
+            ),
+            parent_geometry_converged=bool(raw.get("parent_geometry_converged", False)),
+            parent_final_sp_converged=bool(raw.get("parent_final_sp_converged", False)),
+            parent_final_state=raw.get("parent_final_state"),
+            parent_energy_hartree=(
+                float(raw["parent_energy_hartree"])
+                if raw.get("parent_energy_hartree") is not None
+                else None
+            ),
+            parent_opt_steps=int(raw.get("parent_opt_steps") or 0),
+            parent_scf_cycles=int(raw.get("parent_scf_cycles") or 0),
+            wall_seconds=float(raw.get("wall_seconds") or 0.0),
+            identity_and_structure_ok=bool(raw.get("identity_and_structure_ok", False)),
+            catastrophic=bool(raw.get("catastrophic", False)),
+            catastrophic_reasons=list(raw.get("catastrophic_reasons") or []),
+            aimnet2_energy_used_in_label=bool(
+                raw.get("aimnet2_energy_used_in_label", False)
+            ),
+            single_point_only=bool(raw.get("single_point_only", False)),
+            notes=list(raw.get("notes") or []),
+        )
+
+    cat_s = json.loads(cat_p.read_text(encoding="utf-8"))
+    neu_s = json.loads(neu_p.read_text(encoding="utf-8"))
+    pure_c = _ep(cat_s, "pure_pyscf_reference")
+    pure_n = _ep(neu_s, "pure_pyscf_reference")
+    e0_c = _ep(cat_s, "epoch0_route")
+    e0_n = _ep(neu_s, "epoch0_route")
+
+    pure_root = assemble_root_label(pure_c, pure_n, reference=None)
+    e0_root = assemble_root_label(e0_c, e0_n, reference=None)
+    # bind pure label as reference for error
+    if pure_root.label_kcal is not None and e0_root.label_kcal is not None:
+        e0_root.reference_label_kcal = pure_root.label_kcal
+        e0_root.signed_label_error_kcal = e0_root.label_kcal - pure_root.label_kcal
+        e0_root.absolute_label_error_kcal = abs(e0_root.signed_label_error_kcal)
+
+    pure_steps = int(pure_c.parent_opt_steps) + int(pure_n.parent_opt_steps)
+    e0_steps = int(e0_c.parent_opt_steps) + int(e0_n.parent_opt_steps)
+    step_reduction = None if pure_steps <= 0 else (pure_steps - e0_steps) / pure_steps
+
+    status = (
+        "PASS"
+        if (
+            not pure_root.catastrophic_failure
+            and not e0_root.catastrophic_failure
+            and pure_root.all_identity_and_structure_hard_gates
+            and e0_root.all_identity_and_structure_hard_gates
+        )
+        else "FAILED"
+    )
+    root_payload = {
+        "schema": "nhc0801-epoch0-root-receipt-v1",
+        "mindmap_step": 3,
+        "root_id": root_id,
+        "dry_run": False,
+        "live_chemistry": True,
+        "official_weight_sha256": official_weight_sha256,
+        "checkpoint_id": checkpoint_id,
+        "parent_protocol_sha256": PROTOCOL_SHA256,
+        "single_point_only": False,
+        "aimnet2_energy_enters_label": False,
+        "pure_pyscf_reference": pure_root.as_dict(),
+        "epoch0_route": e0_root.as_dict(),
+        "comparison": {
+            "pure_label_kcal": pure_root.label_kcal,
+            "epoch0_label_kcal": e0_root.label_kcal,
+            "absolute_label_error_kcal": e0_root.absolute_label_error_kcal,
+            "signed_label_error_kcal": e0_root.signed_label_error_kcal,
+            "pure_parent_opt_steps": pure_steps,
+            "epoch0_parent_opt_steps": e0_steps,
+            "parent_opt_step_reduction_fraction": step_reduction,
+        },
+        "status": status,
+        "merged_from_shards": True,
+    }
+    out = root_dir / "epoch0_root_receipt.json"
+    write_json(out, root_payload, overwrite=True)
+    return {"status": status, "path": str(out)}
+
+
 def run_e0_for_val_roots(
     *,
     nhc0801_root: Path,
@@ -152,17 +383,9 @@ def run_e0_for_val_roots(
             geos.append(load_geo(root_id, ep, golds))
 
     aim = LiveAimnet2GauLooseEngine(weight_path=weight)
-    parent_kw: dict = {"max_steps": max_steps}
-    if parent_backend == "gpu":
-        if cuda_device is None:
-            raise ValueError("gpu parent requires cuda_device")
-        parent_kw["backend"] = "gpu"
-        parent_kw["cuda_device"] = int(cuda_device)
-        parent_kw["host_threads"] = 2
-    else:
-        parent_kw["backend"] = "cpu"
-        parent_kw["host_threads"] = 8
-    parent = LiveParentP01Engine(**parent_kw)
+    parent = _parent_engine(
+        max_steps=max_steps, parent_backend=parent_backend, cuda_device=cuda_device
+    )
 
     print(
         f"[e0] {bid} Epoch-0 roots={roots} endpoints={len(geos)} "
@@ -224,6 +447,14 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--parent-backend", choices=("cpu", "gpu"), default="cpu")
     ap.add_argument("--cuda-device", type=int, default=None)
     ap.add_argument(
+        "--endpoint",
+        default=None,
+        help=(
+            "Optional single endpoint (cation|neutral) for 1-GPU-per-endpoint "
+            "sharding. Requires exactly one --val-roots entry."
+        ),
+    )
+    ap.add_argument(
         "--use-official-epoch0-dir",
         action="store_true",
         help="(deprecated, ignored) all batches use epoch0_val_batches/<id>/",
@@ -231,22 +462,59 @@ def main(argv: list[str] | None = None) -> int:
     args = ap.parse_args(argv)
     roots = [r.strip() for r in args.val_roots.split(",") if r.strip()]
     try:
-        receipt = run_e0_for_val_roots(
-            nhc0801_root=args.nhc0801_root,
-            generation_id=args.generation_id,
-            val_roots=roots,
-            batch_id=args.batch_id,
-            max_steps=int(args.max_steps),
-            parent_backend=args.parent_backend,
-            cuda_device=args.cuda_device,
-        )
+        if args.endpoint is not None:
+            if len(roots) != 1:
+                raise E0ValOnlyError(
+                    "--endpoint shard mode requires exactly one --val-roots root"
+                )
+            receipt = run_e0_single_endpoint(
+                nhc0801_root=args.nhc0801_root,
+                generation_id=args.generation_id,
+                batch_id=args.batch_id,
+                root_id=roots[0],
+                endpoint=str(args.endpoint),
+                max_steps=int(args.max_steps),
+                parent_backend=args.parent_backend,
+                cuda_device=args.cuda_device,
+            )
+        else:
+            receipt = run_e0_for_val_roots(
+                nhc0801_root=args.nhc0801_root,
+                generation_id=args.generation_id,
+                val_roots=roots,
+                batch_id=args.batch_id,
+                max_steps=int(args.max_steps),
+                parent_backend=args.parent_backend,
+                cuda_device=args.cuda_device,
+            )
     except E0ValOnlyError as exc:
         print(f"E0_VAL_EXIT REFUSED {exc}", flush=True)
         return 2
     except Exception as exc:
         print(f"E0_VAL_EXIT FAIL {type(exc).__name__}: {exc}", flush=True)
         return 1
-    bid = receipt.get("batch_id") or normalize_epoch0_batch_id(args.batch_id)
+    bid = normalize_epoch0_batch_id(args.batch_id)
+    if args.endpoint is not None:
+        shard = receipt.get("shard") if isinstance(receipt, dict) else None
+        st = (shard or {}).get("status") if isinstance(shard, dict) else "UNKNOWN"
+        print(
+            json.dumps(
+                {
+                    "mode": "endpoint_shard",
+                    "status": st,
+                    "batch_id": bid,
+                    "root_id": roots[0],
+                    "endpoint": args.endpoint,
+                    "shard_path": receipt.get("shard_path"),
+                    "root_merge": receipt.get("root_merge"),
+                },
+                indent=2,
+                sort_keys=True,
+            ),
+            flush=True,
+        )
+        print(f"E0_VAL_EXIT {st}", flush=True)
+        return 0 if st == "PASS" else 1
     print(json.dumps({"status": receipt.get("status"), "batch_id": bid, "val_roots": roots}))
     print(f"E0_VAL_EXIT {receipt.get('status')}", flush=True)
     return 0
