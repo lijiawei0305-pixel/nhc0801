@@ -168,3 +168,45 @@ def inventory_as_dict(max_gpu: int = 8) -> dict[str, Any]:
             for s in slots
         ],
     }
+
+
+def list_busy_nhc_parent_worker_gpus() -> set[int]:
+    """GPUs pinned by live ``nhc0801_pyscf_parent_worker`` (CUDA_VISIBLE_DEVICES).
+
+    Used by teacher daemon: free = not currently holding a parent worker.
+    Does not scan VASP (teacher still avoids multi-claim via this set).
+    """
+    import os
+
+    busy: set[int] = set()
+    try:
+        names = os.listdir("/proc")
+    except OSError:
+        return busy
+    for name in names:
+        if not name.isdigit():
+            continue
+        try:
+            with open(f"/proc/{name}/cmdline", "rb") as fh:
+                cmd = fh.read().replace(b"\0", b" ").decode(errors="replace")
+        except OSError:
+            continue
+        if "nhc0801_pyscf_parent_worker" not in cmd:
+            continue
+        try:
+            with open(f"/proc/{name}/environ", "rb") as fh:
+                env = fh.read().split(b"\0")
+        except OSError:
+            continue
+        for e in env:
+            if e.startswith(b"CUDA_VISIBLE_DEVICES="):
+                v = e.split(b"=", 1)[1].decode().strip()
+                if v.isdigit():
+                    busy.add(int(v))
+    return busy
+
+
+def list_free_gpu_ids(all_ids: Sequence[int]) -> list[int]:
+    """Teacher-style free list: not currently used by NHC parent workers."""
+    busy = list_busy_nhc_parent_worker_gpus()
+    return [int(i) for i in all_ids if int(i) not in busy]

@@ -67,32 +67,21 @@ def has_pair(root_id: str, xyz_dirs: Sequence[Path]) -> Path | None:
 
 
 def list_busy_gpu_ids() -> set[int]:
-    """GPUs currently pinned by NHC0801 parent workers."""
-    busy: set[int] = set()
-    for name in os.listdir("/proc"):
-        if not name.isdigit():
-            continue
-        try:
-            cmd = open(f"/proc/{name}/cmdline", "rb").read().replace(b"\0", b" ").decode()
-        except OSError:
-            continue
-        if "nhc0801_pyscf_parent_worker" not in cmd:
-            continue
-        try:
-            env = open(f"/proc/{name}/environ", "rb").read().split(b"\0")
-        except OSError:
-            continue
-        for e in env:
-            if e.startswith(b"CUDA_VISIBLE_DEVICES="):
-                v = e.split(b"=", 1)[1].decode().strip()
-                if v.isdigit():
-                    busy.add(int(v))
-    return busy
+    """GPUs currently pinned by NHC0801 parent workers.
+
+    Thin wrapper around :func:`nhc_deprot.resources.gpu_inventory.list_busy_nhc_parent_worker_gpus`
+    (single implementation; do not reintroduce a second free-GPU heuristic).
+    """
+    from nhc_deprot.resources.gpu_inventory import list_busy_nhc_parent_worker_gpus
+
+    return list_busy_nhc_parent_worker_gpus()
 
 
 def list_free_gpu_ids(all_ids: Sequence[int]) -> list[int]:
-    busy = list_busy_gpu_ids()
-    return [i for i in all_ids if i not in busy]
+    """Teacher free list: not holding an NHC parent worker right now."""
+    from nhc_deprot.resources.gpu_inventory import list_free_gpu_ids as _free
+
+    return _free(all_ids)
 
 
 def endpoint_done_ok(out_root: Path, root_id: str, endpoint: str) -> bool:

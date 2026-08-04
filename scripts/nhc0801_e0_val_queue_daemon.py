@@ -6,8 +6,10 @@ Policy (user 2026-08-02/03):
   - g001 Epoch-0: both Val roots — usually via live_orchestrate
   - g00N Epoch-0 (N>=2): only that batch's val_roots (2 per batch)
   - never run e0 on train_roots
-  - AIMNet2 GAU only on GPUs without VASP (may share with our gpu4pyscf)
-  - parent/handoff = **gpu4pyscf on same physical GPU** (user 2026-08-03; CPU was too slow)
+  - GPU pick: **only** ``nhc_deprot.resources.gpu_inventory`` (no-VASP, free/low-mem)
+  - Val batch with **2 roots**: **4-GPU endpoint fan-out** via ``e0_val_dispatch``
+    (AGENTS hard rule; do not reintroduce single-GPU whole-batch launch)
+  - parent/handoff = **gpu4pyscf on same physical GPU** as that endpoint shard
   - disk: epoch0_val_batches/g00N/ holds g00N Epoch-0 receipts
 
 State: runs/<gen>/epoch0_val_queue/state.json
@@ -28,6 +30,14 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from nhc_deprot.data.paths import TRAIN_ROOTS, VALIDATION_ROOTS  # noqa: E402
+from nhc_deprot.pipeline.e0_val_dispatch import (  # noqa: E402
+    E0ValDispatchError,
+    launch_val_e0_4gpu,
+)
+from nhc_deprot.resources.gpu_inventory import (  # noqa: E402
+    GpuInventoryError,
+    pick_gpus,
+)
 
 G002_VAL = (
     "HVVRUQBMAZRKPJ-UHFFFAOYSA-N",
@@ -46,60 +56,6 @@ def log(msg: str, log_path: Path) -> None:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     with log_path.open("a", encoding="utf-8") as fh:
         fh.write(line + "\n")
-
-
-def gpus_without_vasp(max_gpu: int = 8) -> list[int]:
-    free: list[int] = []
-    for i in range(max_gpu):
-        try:
-            o = subprocess.check_output(
-                [
-                    "nvidia-smi",
-                    "-i",
-                    str(i),
-                    "--query-compute-apps=process_name,used_memory",
-                    "--format=csv,noheader",
-                ],
-                text=True,
-            )
-        except Exception:
-            continue
-        if "vasp" in o.lower():
-            continue
-        free.append(i)
-    return free
-
-
-def pick_e0_gpus(n: int, *, exclude: set[int] | None = None) -> list[int]:
-    """Pick up to n no-VASP GPUs sorted by lowest used memory."""
-    exclude = exclude or set()
-    scored: list[tuple[int, int]] = []
-    for i in gpus_without_vasp():
-        if i in exclude:
-            continue
-        try:
-            o = subprocess.check_output(
-                [
-                    "nvidia-smi",
-                    "-i",
-                    str(i),
-                    "--query-compute-apps=used_memory",
-                    "--format=csv,noheader",
-                ],
-                text=True,
-            ).strip()
-        except Exception:
-            o = ""
-        mem = 0
-        for line in o.splitlines():
-            if "MiB" in line:
-                try:
-                    mem += int(line.split()[0])
-                except ValueError:
-                    pass
-        scored.append((mem, i))
-    scored.sort()
-    return [i for _, i in scored[:n]]
 
 
 def load_state(path: Path) -> dict:
@@ -272,63 +228,104 @@ def launch_job(
     return p
 
 
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        with open(f"/proc/{pid}/status", encoding="utf-8") as sf:
+            for line in sf:
+                if line.startswith("State:"):
+                    st = line.split()[1:2]
+                    return bool(st) and st[0] != "Z"
+        return True
+    except OSError:
+        return False
+
+
+def _status_from_log_text(text: str) -> str:
+    status = "FAIL"
+    for line in reversed(text.splitlines()):
+        if line.startswith("E0_VAL_EXIT"):
+            parts = line.split(maxsplit=1)
+            status = parts[1].split()[0] if len(parts) > 1 else "FAIL"
+            break
+    return status
+
+
+def _status_ok(status: str) -> bool:
+    return status not in {"FAIL", "FAILED", "REFUSED"} and (
+        "LIVE_EPOCH0" in status
+        or status.endswith("PASS")
+        or status.endswith("PARTIAL")
+        or status == "EXTERNAL_DONE"
+        or status == "PASS"  # endpoint-shard exit
+    )
+
+
 def reap_running(state: dict, state_path: Path, log_path: Path) -> None:
-    """Update completed/failed from running pid map."""
+    """Update completed/failed from running pid map (1-pid or 4gpu multi-pid)."""
     still: dict = {}
     for bid, meta in list((state.get("running") or {}).items()):
-        pid = int(meta.get("pid") or 0)
-        jlog = Path(meta.get("log") or "")
-        alive = False
-        if pid > 0:
-            try:
-                os.kill(pid, 0)
-                # zombie?
-                with open(f"/proc/{pid}/status", encoding="utf-8") as sf:
-                    for line in sf:
-                        if line.startswith("State:"):
-                            if "Z" in line.split()[1:2] or line.split()[1:2] == ["Z"]:
-                                alive = False
-                            else:
-                                alive = True
-                            break
-                    else:
-                        alive = True
-            except OSError:
-                alive = False
-        if alive:
-            still[bid] = meta
-            continue
-        text = jlog.read_text(encoding="utf-8", errors="replace") if jlog.is_file() else ""
-        status = "FAIL"
-        for line in reversed(text.splitlines()):
-            if line.startswith("E0_VAL_EXIT"):
-                # E0_VAL_EXIT LIVE_EPOCH0_PASS | FAIL ... | REFUSED ...
-                parts = line.split(maxsplit=1)
-                status = parts[1].split()[0] if len(parts) > 1 else "FAIL"
-                break
-        ok = status not in {"FAIL", "FAILED", "REFUSED"} and (
-            "LIVE_EPOCH0" in status
-            or status.endswith("PASS")
-            or status.endswith("PARTIAL")
-            or status == "EXTERNAL_DONE"
-        )
-        if ok:
+        mode = str(meta.get("mode") or "single")
+        if mode == "4gpu":
+            pids = [int(x) for x in (meta.get("pids") or []) if int(x) > 0]
+            any_alive = any(_pid_alive(p) for p in pids)
+            if any_alive:
+                still[bid] = meta
+                continue
+            # all shards exited — aggregate endpoint logs
+            logs = [Path(x) for x in (meta.get("logs") or [])]
+            statuses = []
+            for jlog in logs:
+                text = (
+                    jlog.read_text(encoding="utf-8", errors="replace")
+                    if jlog.is_file()
+                    else ""
+                )
+                statuses.append(_status_from_log_text(text))
+            # also check root receipts if present
+            n_pass = sum(1 for s in statuses if _status_ok(s))
+            if n_pass == len(statuses) and statuses:
+                status = "LIVE_EPOCH0_PASS"
+            elif n_pass > 0:
+                status = "LIVE_EPOCH0_PARTIAL"
+            else:
+                status = statuses[0] if statuses else "FAIL"
+            jlog0 = logs[0] if logs else Path(meta.get("log") or "")
+        else:
+            pid = int(meta.get("pid") or 0)
+            jlog0 = Path(meta.get("log") or "")
+            if _pid_alive(pid):
+                still[bid] = meta
+                continue
+            text = (
+                jlog0.read_text(encoding="utf-8", errors="replace")
+                if jlog0.is_file()
+                else ""
+            )
+            status = _status_from_log_text(text)
+
+        if _status_ok(status):
             state.setdefault("completed", {})[bid] = {
                 "status": status,
                 "val_roots": meta.get("val_roots"),
                 "gpu": meta.get("gpu"),
+                "gpus": meta.get("gpus"),
+                "mode": mode,
                 "at": utc(),
-                "log": str(jlog),
+                "log": str(jlog0),
             }
-            log(f"DONE {bid} Epoch-0 status={status}", log_path)
+            log(f"DONE {bid} Epoch-0 status={status} mode={mode}", log_path)
         else:
             fr = state.setdefault("failed", {}).get(bid, {"retries": 0})
             fr["retries"] = int(fr.get("retries") or 0) + 1
             fr["status"] = status
             fr["at"] = utc()
-            fr["log"] = str(jlog)
+            fr["log"] = str(jlog0)
+            fr["mode"] = mode
             state["failed"][bid] = fr
-            log(f"FAIL {bid} Epoch-0 status={status}", log_path)
+            log(f"FAIL {bid} Epoch-0 status={status} mode={mode}", log_path)
     state["running"] = still
     save_state(state_path, state)
 
@@ -369,7 +366,12 @@ def main(argv: list[str] | None = None) -> int:
 
         jobs = collect_jobs(gen_root)
         running = dict(state.get("running") or {})
-        used_gpus = {int(m["gpu"]) for m in running.values() if m.get("gpu") is not None}
+        used_gpus: set[int] = set()
+        for m in running.values():
+            if m.get("gpus"):
+                used_gpus.update(int(x) for x in m["gpus"])
+            elif m.get("gpu") is not None:
+                used_gpus.add(int(m["gpu"]))
         slots = max(0, int(args.max_parallel) - len(running))
 
         for job in jobs:
@@ -403,13 +405,65 @@ def main(argv: list[str] | None = None) -> int:
             if bid in failed and int(failed[bid].get("retries") or 0) >= 2:
                 continue
 
-            picked = pick_e0_gpus(1, exclude=used_gpus)
-            if not picked:
-                log("no GPU without VASP available; wait", log_path)
+            # Hard rule: 2 Val roots → 4-GPU endpoint fan-out (AGENTS)
+            if len(vals) == 2 and str(args.parent_backend) == "gpu":
+                try:
+                    gpus = pick_gpus(4, exclude=used_gpus, allow_shared=True)
+                except GpuInventoryError as exc:
+                    log(f"need 4 GPUs for {bid} Val e0 fan-out; wait ({exc})", log_path)
+                    break
+                try:
+                    receipt = launch_val_e0_4gpu(
+                        nhc0801_root=nhc,
+                        generation_id=args.generation_id,
+                        batch_id=bid,
+                        val_roots=vals,
+                        parent_backend="gpu",
+                        parent_max_steps=100,
+                        gpu_ids=gpus,
+                        dry_run=False,
+                    )
+                except E0ValDispatchError as exc:
+                    log(f"FAIL launch 4gpu {bid}: {exc}", log_path)
+                    fr = state.setdefault("failed", {}).get(bid, {"retries": 0})
+                    fr["retries"] = int(fr.get("retries") or 0) + 1
+                    fr["status"] = "LAUNCH_FAIL"
+                    fr["at"] = utc()
+                    state["failed"][bid] = fr
+                    save_state(state_path, state)
+                    continue
+                pids = [int(s["pid"]) for s in receipt["shards"] if s.get("pid")]
+                logs = [str(s["log_path"]) for s in receipt["shards"]]
+                log(
+                    f"RUN {bid} Epoch-0 mode=4gpu gpus={gpus} vals={vals} pids={pids}",
+                    log_path,
+                )
+                running[bid] = {
+                    "mode": "4gpu",
+                    "pids": pids,
+                    "gpus": gpus,
+                    "val_roots": vals,
+                    "logs": logs,
+                    "log": logs[0] if logs else "",
+                    "plan_path": receipt.get("plan_path"),
+                    "started_at": utc(),
+                    "parent_backend": "gpu",
+                }
+                used_gpus.update(gpus)
+                slots -= 1
+                state["running"] = running
+                save_state(state_path, state)
+                continue
+
+            # Fallback: 1 root only (or CPU parent) — single GPU
+            try:
+                picked = pick_gpus(1, exclude=used_gpus, allow_shared=True)
+            except GpuInventoryError:
+                log("no eligible GPU available; wait", log_path)
                 break
             gpu = picked[0]
             jlog = qdir / f"job_{bid}.out"
-            log(f"RUN {bid} Epoch-0 gpu={gpu} vals={vals}", log_path)
+            log(f"RUN {bid} Epoch-0 mode=single gpu={gpu} vals={vals}", log_path)
             p = launch_job(
                 nhc=nhc,
                 gen=args.generation_id,
@@ -420,6 +474,7 @@ def main(argv: list[str] | None = None) -> int:
                 parent_backend=str(args.parent_backend),
             )
             running[bid] = {
+                "mode": "single",
                 "pid": p.pid,
                 "gpu": gpu,
                 "val_roots": vals,

@@ -106,6 +106,7 @@ def launch_val_e0_4gpu(
     parent_max_steps: int = 100,
     max_gpu: int = 8,
     exclude_gpus: Sequence[int] | None = None,
+    gpu_ids: Sequence[int] | None = None,
     require_free: bool = False,
     allow_shared: bool = True,
     dry_run: bool = False,
@@ -113,6 +114,7 @@ def launch_val_e0_4gpu(
 ) -> dict[str, Any]:
     """Pick 4 GPUs and spawn one e0 endpoint-shard process per GPU.
 
+    If *gpu_ids* is provided (length 4), use it as-is (caller already selected).
     Returns a plan receipt (does not wait for chemistry to finish).
     """
     roots = (
@@ -121,16 +123,21 @@ def launch_val_e0_4gpu(
         else list(default_val_roots_for_batch(batch_id))
     )
     inv = inventory_as_dict(max_gpu=max_gpu)
-    try:
-        gpus = pick_gpus(
-            4,
-            max_gpu=max_gpu,
-            exclude=exclude_gpus,
-            allow_shared=allow_shared,
-            require_free=require_free,
-        )
-    except GpuInventoryError as exc:
-        raise E0ValDispatchError(str(exc)) from exc
+    if gpu_ids is not None:
+        gpus = [int(x) for x in gpu_ids]
+        if len(gpus) != 4:
+            raise E0ValDispatchError(f"gpu_ids must have length 4, got {gpus}")
+    else:
+        try:
+            gpus = pick_gpus(
+                4,
+                max_gpu=max_gpu,
+                exclude=exclude_gpus,
+                allow_shared=allow_shared,
+                require_free=require_free,
+            )
+        except GpuInventoryError as exc:
+            raise E0ValDispatchError(str(exc)) from exc
 
     gen_root = Path(nhc0801_root) / "runs" / generation_id
     log_dir = gen_root / "logs" / "e0_val_4gpu"
