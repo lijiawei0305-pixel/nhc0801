@@ -365,7 +365,8 @@ CLOSED: final_test_open            modify_wjw_outside_NHC0801
 2. **不得** kill / 干扰在跑的 `nhc0801_gpu_teacher_daemon.py`、`e0_val_only`、`nhc0801_compute_steward.py`。
 3. **Final Test 保持封存**。mindmap 11–12：Test 一旦开封，选模流程整体作废且不可逆。开封需要用户**单独**授权。
 4. 已完成的 `frame_count == 2` teacher endpoint **只读**，不重算不改写。
-5. 起训练前必须过 GPU claim；不得抢占他人显存。
+5. 起训练前必须过 GPU claim；不得抢占他人显存。  
+7. **Val-only Epoch-0（2 Val roots）**：必须用 **4 卡分片**（`--endpoint` × 4 或 `nhc0801_e0_val_4gpu.py`）。禁止单卡跑满 4 端点。选卡见 `gpu_inventory.pick_gpus`（跳过 VASP、优先空闲）。
 6. 不改 `mindmap.md` 科学口径 / Parent P01 SHA / GAU_LOOSE **五准则与 fmax** / TVT 密封规则。步数预算变更须显式改唯一的 `GAU_LOOSE_V001.yaml`（并同步 `src`/`docs` 镜像），禁止另立第二份并行合同。
 
 ---
@@ -386,6 +387,7 @@ CLOSED: final_test_open            modify_wjw_outside_NHC0801
 | 并存 | CPU+GPU 默认可并存，但 **每次须用户确认**；路径与 GPU 卡启动前检查 |
 | 训练 | AIMNet2 **仅 CUDA 正线**；只认 g001 **Train3** 老师帧（当前正线） |
 | xc | 必须 `wb97m-d3bj` |
+| **Val e0 四端点 GPU** | **硬约束**：每批 Val **2 roots × 2 endpoints = 4 endpoints** 必须 **分到 4 张不同 GPU** 并行。**禁止**把整批钉在一张卡上串行。入口：`scripts/nhc0801_e0_val_4gpu.py`（逻辑 `pipeline/e0_val_dispatch.py` + `resources/gpu_inventory.py`）。选卡：无 VASP → 优先空闲/低显存；启动前 `nvidia-smi`；**不得** kill daemon / 他人作业。 |
 
 ### 遇问题读哪个文件
 
