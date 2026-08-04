@@ -40,7 +40,16 @@ def test_load_default_gau_loose() -> None:
     assert profile.gradient_rms_eh_bohr == 1.7e-3
     assert profile.gradient_max_eh_bohr == 2.5e-3
     assert profile.ase_fmax_ev_angstrom == 0.10
-    assert profile.maximum_steps == 100
+    assert profile.maximum_steps == 250  # GAU_LOOSE_V002 budget
+
+
+def test_gau_loose_v001_preserved_at_100() -> None:
+    from nhc_deprot.pipeline.parent_handoff import GAU_LOOSE_V001_CONTRACT
+
+    v001 = load_gau_loose_profile(GAU_LOOSE_V001_CONTRACT)
+    assert v001.maximum_steps == 100
+    assert v001.ase_fmax_ev_angstrom == 0.10
+    assert v001.gradient_max_eh_bohr == 2.5e-3
 
 
 def _base_ok(**overrides):

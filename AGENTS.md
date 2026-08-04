@@ -12,6 +12,7 @@ Not a continuation of `nhc-deprot-ranker` Phase 9B. Not production `two_endpoint
 1. Read **`mindmap.md`** + this file + **`PHASE_STATUS.md`**.
 2. If the task touches **CPU/GPU 波次、10 endpoints、teacher/e0 调度、双代数据归属**：read **`docs/contracts/COMPUTE_DISPATCH_V001.md`** (mandatory).
 3. If the task touches **核数/绑核/内存 profile**：read **`docs/contracts/RESOURCE_SCHEDULING_V001.md`** + **`docs/contracts/RESOURCE_PROFILES_V002.yaml`**.
+3b. If the task touches **微调超参 / 损失权重 / 解冻范围 / 选模排序 / teacher 落帧**：read **「模型训练注意事项」T1–T9**（本文件）。那里是实测结论，**不要重新推导**。
 4. Skim **`RETRO.md`** for similar past failures (same category).
 5. Map work to a **mindmap step 0–12**. Do not skip gates.
 6. If the task is non-trivial: write a short plan under **`docs/plans/`** *before* vibe coding.
@@ -77,7 +78,8 @@ Conflict order: **mindmap.md** → **`docs/contracts/COMPUTE_DISPATCH_V001.md`**
 | --- | --- | --- |
 | 老师帧 | **g00N teacher** | **`teacher_gpu_g00N/`** |
 | Epoch-0 基线 | **g00N Epoch-0** | **`epoch0_val_batches/g00N/`**（其下可有 `epoch0/`、`logs/`） |
-| AIMNet2 训练过程 | **g00N train** | **`train_g00N/`**（中间 checkpoint，按 seed/epoch） |
+| AIMNet2 训练过程 | **g00N train** | **`train_g00N/runs/<run_id>/`**（按配方分 run，其下再按 seed/epoch） |
+| 零-DFT 预筛（步骤 7 加强） | **g00N 预筛** | **`pre_screen_g00N/<run_id>/`** |
 | **发布模型版本** | **v0.1 / v0.2 …** | **`models/v0.1/`**：`model.pt` + `info.json` + **`card.svg`/`card.json`** |
 | generation 总目录 | — | **`runs/nhc0801-g001/`**（勿简写成 `runs/g001/`） |
 
@@ -120,16 +122,23 @@ models/
 
 ```text
 train_g001/
-  train_info.json
-  train_result.json
-  logs/train_g001.out
-  seed_20260730/
-    seed_result.json
-    epoch_0005.pt
-    epoch_0005.meta.json
-    epoch_0200.pt
-    epoch_0200.meta.json
+  runs/
+    e1f100_mlp_shift/          ← 配方 run_id（必须有；禁止裸 seed_*）
+      train_info.json          ← run_id + train_config_digest + 数据 manifest SHA
+      train_result.json
+      logs/train_g001.out
+      seed_20260730/
+        seed_result.json
+        epoch_0005.pt
+        epoch_0005.meta.json
+        epoch_0120.pt
+        epoch_0120.meta.json
+    e1f1_mlp/
+      ...
 ```
+
+**`run_id` 命名**：`e<energy_weight>f<forces_weight>_<可训练范围>`，如 `e1f100_mlp_shift`。
+同一 `train_g00N` 下多个 run 并存是**正常**的；`models/v0.N/model.pt` 只能来自其中**胜出 run 的唯一 (seed, epoch)**。
 
 **发布版本目录（强制短名）：**
 
@@ -178,7 +187,8 @@ models/v0.2/
 | `teacher_gpu_side/` | `teacher_gpu_g002/` |
 | `teacher_cpu/`、`teacher_gpu/`（无组号） | `teacher_gpu_g00N/` |
 | 顶层 `epoch0/` 作为 g001 专用规范位 | `epoch0_val_batches/g001/` |
-| 顶层 `train/` 或 `train_batches/` 作为新训练规范位 | `train_g00N/` |
+| 顶层 `train/` 或 `train_batches/` 作为新训练规范位 | `train_g00N/runs/<run_id>/` |
+| `train_g00N/seed_*/`（无 `run_id` 的裸 seed 目录） | `train_g00N/runs/<run_id>/seed_*/`（旧路径只读兼容） |
 | 过程权重：`best.pt` / `latest.pt` | `epoch_NNNN.pt`（四位轮次） |
 | 发布权重：长英文后缀文件名 | **`models/v0.1/model.pt`** |
 | 「Autofill 批 / 扩展批 / 侧线 e0」 | **g00N** / **g00N Epoch-0** / **g00N train** / **v0.1** |
@@ -238,7 +248,7 @@ Preflight: `PYTHONPATH=src python -m nhc_deprot.pipeline.mindmap_orchestrator`
 - Reaction `NHC-H+ → NHC + H+`；cation (+1,s) / neutral (0,s)；root 不跨 split。
 - **Parent = P01 only**: `wb97m-d3bj` / `def2-TZVPP`，grid=4，SCF 1e-9。  
   SHA256 `227c22a527e567bc4de873ab743fe9f493779eccbb1a698d2913c87695ebf87a`。
-- **GAU_LOOSE**: 五准则 + ASE fmax **0.10** eV/Å，max 100。非 fmax **0.05**。
+- **GAU_LOOSE**: 五准则 + ASE fmax **0.10** eV/Å；步数预算 **`GAU_LOOSE_V002` max 250**（V001 为 max 100，只读保留）。非 fmax **0.05**。升版只改预算、不改判据。
 - 路线：freeze → AIMNet2 GAU_LOOSE → gates → exact-byte handoff → **完整** parent GAU → SP → label。  
   `single_point_only=false`；**AIMNet2 能量永不进标签**。
 - 训练目标：冻结 D3 残差 E/F；禁止静默重算 D3。
@@ -254,15 +264,109 @@ Preflight: `PYTHONPATH=src python -m nhc_deprot.pipeline.mindmap_orchestrator`
 
 ---
 
-## Gates（默认全关）
+## 模型训练注意事项（微调硬规则 · 每次动训练前必读）
+
+> 来源：2026-08-03 对 `runs/server_g001_snapshot/train/campaign_receipt_live.json`（3 seed × 200 ep 真实曲线）与服务器 teacher 产物的实测复盘；文献对照 arXiv:2506.21935。
+> 全文推导见 `docs/plans/20260803_teacher_trajectory_and_finetune_v02_plan.md` §1。**不要重新推导，直接用。**
+
+### T1 · AIMNet2 在本流水线里是「预优化器」，不是能量预测器
+
+ΔE_deprot 标签**只认 parent DFT**，AIMNet2 能量永不进标签。它唯一的职责是把几何预优化到 GAU_LOOSE、让 parent PySCF 少走几步。
+
+**推论（硬规则）**：
+
+- **帧级 energy loss 在任何阶段都不得作为选择依据** —— 不作为终选、不作为短名单主排序、不作为"同分破并列"。它测的是不进标签的绝对偏置。
+- 与预优化器职责直接对应的量是：**力误差、到 GAU_LOOSE 的步数、与 parent 参考终点几何的 RMSD、相对 Epoch-0 的 parent 步数比**。排序时它们优先于任何能量项。
+
+### T2 · 训练是免费的，DFT 才是瓶颈——不要按"训练跑数"做预算
+
+实测：3 seed × 200 epoch ≈ **5 分钟**（1 张 V100）。而 sci-val 每个候选要跑完整 parent GAU 优化；teacher 单 endpoint 中位 **0.72 h**。
+
+**推论（硬规则）**：
+
+- 消融要**跑宽**（多配方并行，成本可忽略），sci-val 要**收窄**（只送 2–3 个候选）。
+- 中间必须有**零-DFT 预筛**（`pipeline/pre_screen.py` → `pre_screen_g00N/`）：只跑 AIMNet2 自身 GAU_LOOSE 弛豫，与已有的 parent 参考终点几何比 RMSD / 步数 / 力误差。它属于 mindmap 第 7 步「初步筛选」，**不需要** `scientific_validation_live` 门，收据必须写 `final_model_selected: false`。
+- 任何"为了省训练时间所以只跑 A/B 两个配方"的方案都是**成本模型倒置**，直接驳回。
+
+### T3 · 标签是未对齐的绝对总能——先解决 E0，再谈超参
+
+训练目标是 `P01_total_energy_minus_frozen_two_body_D3_BJ`（eV，绝对值），**没有做 per-element 参考能对齐**。实测后果：train loss 掉 8.4 倍时 val energy MSE 只掉 31% 并在 epoch 50 压死，train/val 差两个数量级——模型在记忆每个分子的常数偏置，学不到迁移。
+
+**推论（硬规则）**：
+
+- `outputs.atomic_shift`（per-element E0，十几个参数）应当**可训练**。这正面对应 FT 教程的第一条警告"必须自己算 E0"。只放 `^outputs\.energy_mlp\.` 会逼 MLP 用环境相关容量去吸收常数偏置。
+- 看到 train/val 差一个数量级以上时，**先怀疑参考能对齐，不要先加正则或减 epoch**。
+
+### T4 · 损失权重必须按**实测量级**定，不能照抄论文默认值
+
+实测 val `E_mse ≈ 12.4` vs `F_mse ≈ 0.42`，量级比 **≈ 30:1**。`scaled_training_loss` 按 `w/(w_e+w_f)` 归一，所以 `1:1` 的有效配比就是 30:1 偏能量。
+
+| forces_weight | 有效 E:F | 结论 |
+| ---: | --- | --- |
+| 1 | 30 : 1 | 能量完全主导（当前基线） |
+| **10**（FT 教程默认） | 3 : 1 | **仍是能量主导——照抄会得出"力权重无用"的错误结论** |
+| 100 | 1 : 3.4 | 力主导 |
+
+**硬规则**：改力权重前，先从最近一份 `campaign_receipt_live.json` 里读出 `weighted_energy_mse` / `weighted_forces_mse` 的实际量级，再定网格。教程给的 `1.0–20.0` 是针对已做参考能对齐的体系。
+
+### T5 · teacher 必须落**全轨迹**帧
+
+geomeTRIC 每步都算了 parent-level 能量+梯度。`geometric_optimize(mf, maxsteps=...)` **不传 `callback` 就等于把 ~90% 已付费的标注数据扔掉**。
+
+**硬规则**：
+
+- 任何 parent 优化的调用点都必须传 `callback`（PySCF 2.13.1 已确认支持；callback 收到 `calc_new` 的 `locals()`，可用 `coords`(Bohr) / `energy` / `gradients` / `self.cycle`）。
+- 捕获到的是**所有被求值的几何**（含线搜索被拒绝的试探步），不是"被接受的优化路径"。必须落 `cycle`，且**不得**当作轨迹顺序解释。这些点是合法的 parent 标注，且覆盖非平衡区，对预优化器**更有价值**。
+- 下游一律按 `manifest.frame_count` 动态读取，**禁止硬编码 2**。历史上 `frame_count == 2` 的 endpoint **只读，不重算不改写**。
+- D3(BJ) 两体项是纯几何解析函数，**任意帧都能零 DFT 成本补投影** —— 不要因为"要重算 D3"而放弃中间帧。
+
+### T6 · 权重策略在变长轨迹下自动成立
+
+`assign_candidate_endpoint_weights` 是「等 candidate 质量 → 等 endpoint 质量 → 端点内均分」。**端点总质量与帧数无关**，长轨迹只是每帧权重更小。所以帧数变长不需要改权重策略——但每次改数据链后必须跑 `audit_split_weight_sums` 复核。
+
+### T7 · 超参默认值的已知偏差
+
+| 项 | 现状 | 应为 | 依据 |
+| --- | --- | --- | --- |
+| `batch_size` | 32 | **≤ 20，建议 8** | FT 教程明确 >20 伤泛化；且小数据下 32 会让一个 epoch 只剩个位数优化步 |
+| `epochs` | 200 | **~120** | 实测 val 在 epoch 60–70 触底，之后 LR 衰到 ~4e-7 空转，shortlist 会选到过拟合点 |
+| EMA | 无 | **0.99** | FT 教程推荐 0.98–0.99999 |
+| lr / optimizer / cutoff | 1e-4 / RAdam / 基座值 | **不动** | 官方 AIMNet2 口径；FT 教程明确警告不要改基座 cutoff |
+
+**一次只动一类变量**：禁止同时扫 lr、epochs、trainable 范围。
+
+### T8 · 每个训练配方必须自证身份
+
+- 落盘走 `train_g00N/runs/<run_id>/`；`run_id` 格式 `e<E权重>f<F权重>_<可训练范围>`。
+- `train_info.json` 与每个 `.pt` 的 meta 必须含 `train_config_digest`（`run_id` / E,F 权重 / `trainable_parameter_regex` / `ema_decay` / `batch_size` / `epochs` 的 canonical SHA）。
+- 注意 `trainable_parameter_regex` 是 **tuple**；实现若只取 `[0]` 则多模式配方静默失效——改可训练范围时先确认全部模式都被应用。
+
+### T9 · 诚实失败优先于刷版本号
+
+当前 pilot 只有 **3 个 train root**。在这个规模上，任何超参都救不了泛化。若消融在 T1 列出的指标上都不优于 Epoch-0：结论是**数据不足，等 teacher 出量**，不是扩大解冻范围或扫 lr。`models/v0.N` 若仍要登记，`info.json` 与 card 必须注明 `no gain vs epoch-0`。
+
+---
+
+## Gates
+
+**2026-08-03 用户授权**（自动化开发阶段，见 `docs/prompt.md`）：
 
 ```text
-teacher_pyscf_authorized / aimnet2_train_authorized / epoch0_execution
-scientific_validation_live / final_test_open
-modify_wjw_outside_NHC0801 / scheduler_submission
+OPEN :  teacher_pyscf_authorized   epoch0_execution
+        aimnet2_train_authorized   scientific_validation_live
+        rsync 部署进 NHC0801（无 --delete）
+CLOSED: final_test_open            modify_wjw_outside_NHC0801
+        scheduler_submission
 ```
 
-允许：本地代码·测试·文档；只读 SSH；rsync **进** NHC0801（无 `--delete`）。
+**红线（即使在「全开」授权下也不得越过）**：
+
+1. 只写 `$WJW/NHC0801`。这是共享机器（12 个用户、GPU 2/3/4/6 上是别人的作业）。
+2. **不得** kill / 干扰在跑的 `nhc0801_gpu_teacher_daemon.py`、`e0_val_only`、`nhc0801_compute_steward.py`。
+3. **Final Test 保持封存**。mindmap 11–12：Test 一旦开封，选模流程整体作废且不可逆。开封需要用户**单独**授权。
+4. 已完成的 `frame_count == 2` teacher endpoint **只读**，不重算不改写。
+5. 起训练前必须过 GPU claim；不得抢占他人显存。
+6. 不改 `mindmap.md` 科学口径 / Parent P01 SHA / GAU_LOOSE **五准则与 fmax** / TVT 密封规则。步数预算升版须走 `GAU_LOOSE_V00N`，禁止静默改旧文件。
 
 ---
 
@@ -292,6 +396,8 @@ modify_wjw_outside_NHC0801 / scheduler_submission
 | 核/内存/profile | `RESOURCE_SCHEDULING_V001.md` + `RESOURCE_PROFILES_V002.yaml` |
 | 踩坑 | `RETRO.md` |
 | 选模阈值 | `NUMERIC_CALIBRATION_V001.yaml` |
+| **改微调超参 / 损失权重 / 解冻范围** | **本文件「模型训练注意事项」T1–T9**（必读，勿重推） |
+| **teacher 落帧 / 轨迹捕获** | 本文件 **T5** + `docs/plans/20260803_teacher_trajectory_and_finetune_v02_plan.md` §3 M1–M4 |
 
 ---
 
@@ -328,4 +434,4 @@ rsync -avz --exclude '.git/' --exclude '__pycache__/' --exclude '.venv/' \
 - 不 `git reset/clean` science-pilot；不改 ranker 生产树。
 - 优先补齐 mindmap 缺口模块，而非扩大范围。
 
-**Next engineering gap:** multi-seed trainer loop（步骤 4–5），且永不靠 quick-val 终选。
+**Next engineering gap:** teacher 全轨迹落帧（步骤 2；见「模型训练注意事项」T5 — 每小时都在流失已付费的标注数据），其次是零-DFT 预筛 `pipeline/pre_screen.py`（步骤 7）。永不靠 quick-val 或帧级 energy loss 终选。

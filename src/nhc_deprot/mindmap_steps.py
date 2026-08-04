@@ -53,7 +53,7 @@ MINDMAP_IMPLEMENTATION: Final = {
             "nhc_deprot.pipeline.scientific_validation",
             "nhc_deprot.pipeline.parent_handoff",
             "nhc_deprot.resources.profiles",
-            "docs/contracts/GAU_LOOSE_V001.yaml",
+            "docs/contracts/GAU_LOOSE_V002.yaml",
             "scripts/nhc0801_epoch0_dry_run.py",
             "scripts/nhc0801_check_epoch0_receipts.py",
             "scripts/nhc0801_pyscf_parent_worker.py",
