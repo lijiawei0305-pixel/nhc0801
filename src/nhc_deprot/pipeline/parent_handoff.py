@@ -17,11 +17,8 @@ from typing import Any, Final, cast
 
 import yaml
 
-# Active default: V002 (maximum_steps 250). V001 kept read-only for audit.
+# Sole frozen GAU_LOOSE contract (maximum_steps 250).
 DEFAULT_GAU_LOOSE_CONTRACT: Final = (
-    Path(__file__).resolve().parents[1] / "contracts" / "GAU_LOOSE_V002.yaml"
-)
-GAU_LOOSE_V001_CONTRACT: Final = (
     Path(__file__).resolve().parents[1] / "contracts" / "GAU_LOOSE_V001.yaml"
 )
 

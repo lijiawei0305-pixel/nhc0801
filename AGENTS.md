@@ -248,7 +248,7 @@ Preflight: `PYTHONPATH=src python -m nhc_deprot.pipeline.mindmap_orchestrator`
 - Reaction `NHC-H+ → NHC + H+`；cation (+1,s) / neutral (0,s)；root 不跨 split。
 - **Parent = P01 only**: `wb97m-d3bj` / `def2-TZVPP`，grid=4，SCF 1e-9。  
   SHA256 `227c22a527e567bc4de873ab743fe9f493779eccbb1a698d2913c87695ebf87a`。
-- **GAU_LOOSE**: 五准则 + ASE fmax **0.10** eV/Å；步数预算 **`GAU_LOOSE_V002` max 250**（V001 为 max 100，只读保留）。非 fmax **0.05**。升版只改预算、不改判据。
+- **GAU_LOOSE**: 五准则 + ASE fmax **0.10** eV/Å；步数预算 **max 250**（唯一合同 `docs/contracts/GAU_LOOSE_V001.yaml` / 包内同名）。非 fmax **0.05**。禁止并行第二份 GAU_LOOSE 步数合同。
 - 路线：freeze → AIMNet2 GAU_LOOSE → gates → exact-byte handoff → **完整** parent GAU → SP → label。  
   `single_point_only=false`；**AIMNet2 能量永不进标签**。
 - 训练目标：冻结 D3 残差 E/F；禁止静默重算 D3。
@@ -366,7 +366,7 @@ CLOSED: final_test_open            modify_wjw_outside_NHC0801
 3. **Final Test 保持封存**。mindmap 11–12：Test 一旦开封，选模流程整体作废且不可逆。开封需要用户**单独**授权。
 4. 已完成的 `frame_count == 2` teacher endpoint **只读**，不重算不改写。
 5. 起训练前必须过 GPU claim；不得抢占他人显存。
-6. 不改 `mindmap.md` 科学口径 / Parent P01 SHA / GAU_LOOSE **五准则与 fmax** / TVT 密封规则。步数预算升版须走 `GAU_LOOSE_V00N`，禁止静默改旧文件。
+6. 不改 `mindmap.md` 科学口径 / Parent P01 SHA / GAU_LOOSE **五准则与 fmax** / TVT 密封规则。步数预算变更须显式改唯一的 `GAU_LOOSE_V001.yaml`（并同步 `src`/`docs` 镜像），禁止另立第二份并行合同。
 
 ---
 

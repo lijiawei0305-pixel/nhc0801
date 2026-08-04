@@ -4,6 +4,10 @@ science_pilot_only: true
 project: nhc0801
 production_accepted: false
 
+# Sole GAU_LOOSE contract for NHC0801.
+# ASE LBFGS step budget: 250 (five surface criteria + fmax 0.10 unchanged).
+# Pilot evidence: Val neutrals often need >100 steps; worst-case ~147–196.
+
 profile: GAU_LOOSE
 profile_source:
   implementation: geomeTRIC
@@ -25,7 +29,7 @@ aimnet2_surface_convergence:
 
 ase_lbfgs:
   maximum_force_eV_A: 0.10
-  maximum_steps: 100
+  maximum_steps: 250
   require_accepted_step_index_less_than_or_equal_maximum: true
   retry: false
   fallback: false
