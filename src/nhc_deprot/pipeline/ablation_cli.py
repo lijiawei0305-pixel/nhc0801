@@ -439,30 +439,68 @@ def run_pre_screen_cli(
     shortlist_count: int = 3,
     screen_id: str | None = None,
     write: bool = True,
+    device: str | None = None,
+    max_steps: int | None = None,
 ) -> dict[str, Any]:
-    """Wire candidates + refs + engine into :func:`run_pre_screen_campaign`."""
+    """Wire candidates + refs + engine into :func:`run_pre_screen_campaign`.
+
+    dry-run uses :class:`SimulatedPreScreenEngine`. Live uses
+    :func:`~nhc_deprot.pipeline.live_pre_screen_engine.make_engine_factory`
+    so each candidate loads its own ``weight_path`` (fail closed if missing).
+    """
 
     if not candidates:
         raise PreScreenCliError("candidates must be non-empty")
+
+    sid = screen_id
+    if sid is None:
+        sid = run_ids[0] if len(run_ids) == 1 else "campaign"
+
+    if dry_run:
+        refs = resolve_references(
+            layout,
+            batch_id=batch_id,
+            root_ids=root_ids,
+            allow_synthetic=True,
+        )
+        return run_pre_screen_campaign(
+            candidates=list(candidates),
+            references=refs,
+            engine=SimulatedPreScreenEngine(),
+            layout=layout,
+            batch_id=batch_id,
+            screen_id=sid,
+            shortlist_count=shortlist_count,
+            write=write,
+        )
+
+    # Live: fail closed on missing weights before touching teacher refs / AIMNet2.
+    from nhc_deprot.pipeline.live_pre_screen_engine import (
+        LivePreScreenEngineError,
+        make_engine_factory,
+    )
+
+    missing = [c.checkpoint_id for c in candidates if not c.weight_path]
+    if missing:
+        raise PreScreenCliError(
+            "live pre-screen requires weight_path on every candidate; missing: "
+            + ", ".join(missing[:8])
+            + ("…" if len(missing) > 8 else "")
+        )
     refs = resolve_references(
         layout,
         batch_id=batch_id,
         root_ids=root_ids,
-        allow_synthetic=dry_run,
+        allow_synthetic=False,
     )
-    engine = SimulatedPreScreenEngine() if dry_run else None
-    if engine is None:
-        raise PreScreenCliError(
-            "live pre-screen requires an injected AIMNet2 GauLooseEngine "
-            "(not available in this CLI skeleton; use dry-run or library API)"
-        )
-    sid = screen_id
-    if sid is None:
-        sid = run_ids[0] if len(run_ids) == 1 else "campaign"
+    try:
+        factory = make_engine_factory(max_steps=max_steps, device=device)
+    except LivePreScreenEngineError as exc:
+        raise PreScreenCliError(str(exc)) from exc
     return run_pre_screen_campaign(
         candidates=list(candidates),
         references=refs,
-        engine=engine,
+        engine_factory=factory,
         layout=layout,
         batch_id=batch_id,
         screen_id=sid,
@@ -525,7 +563,33 @@ def build_pre_screen_parser() -> argparse.ArgumentParser:
         "--dry-run",
         action=argparse.BooleanOptionalAction,
         default=True,
-        help="Use SimulatedPreScreenEngine (default: true)",
+        help=(
+            "Use SimulatedPreScreenEngine (default: true). "
+            "Use --no-dry-run or --live for real AIMNet2."
+        ),
+    )
+    p.add_argument(
+        "--live",
+        action="store_true",
+        default=False,
+        help=(
+            "Live AIMNet2 GAU_LOOSE pre-screen "
+            "(implies --no-dry-run; needs weight_path per candidate)"
+        ),
+    )
+    p.add_argument(
+        "--device",
+        default=None,
+        help=(
+            "Optional device hint recorded on engine (e.g. cuda / cpu). "
+            "AIMNet2ASE typically manages CUDA placement itself."
+        ),
+    )
+    p.add_argument(
+        "--max-steps",
+        type=int,
+        default=None,
+        help="Override GAU_LOOSE max ASE LBFGS steps (default: contract maximum_steps)",
     )
     p.add_argument(
         "--write",
@@ -575,6 +639,9 @@ def main_pre_screen(
     else:
         root_ids = list(VALIDATION_ROOTS)
 
+    # --live forces real AIMNet2 path; otherwise honour --dry-run / --no-dry-run.
+    dry_run = False if bool(args.live) else bool(args.dry_run)
+
     try:
         if args.candidates_json is not None:
             candidates = candidates_from_json_file(Path(args.candidates_json))
@@ -587,7 +654,7 @@ def main_pre_screen(
                 run_ids=run_ids,
                 shortlist_only=not bool(args.all_checkpoints),
             )
-            if not candidates and args.dry_run:
+            if not candidates and dry_run:
                 candidates = demo_candidates(run_ids)
 
         campaign = run_pre_screen_cli(
@@ -596,10 +663,12 @@ def main_pre_screen(
             run_ids=run_ids,
             candidates=candidates,
             root_ids=root_ids,
-            dry_run=bool(args.dry_run),
+            dry_run=dry_run,
             shortlist_count=int(args.shortlist_count),
             screen_id=args.screen_id,
             write=bool(args.write),
+            device=args.device,
+            max_steps=args.max_steps,
         )
     except Exception as exc:  # noqa: BLE001
         print(
