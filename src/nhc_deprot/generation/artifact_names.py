@@ -58,6 +58,15 @@ def train_checkpoint_meta_name(epoch: int) -> str:
     return f"{train_checkpoint_stem(epoch)}.meta.json"
 
 
+def train_checkpoint_raw_weight_name(epoch: int) -> str:
+    """Non-EMA sibling of the weight file, e.g. epoch_0120.raw.pt.
+
+    Audit-only companion to ``train_checkpoint_weight_name`` (AGENTS T7).
+    Never a release path; sci-val and pre-screen read the main ``.pt``.
+    """
+    return f"{train_checkpoint_stem(epoch)}.raw.pt"
+
+
 # --- Released AIMNet2 versions (selected after train + scientific selection) ---
 # Human: "v0.1" / "v0.2"  →  models/v0.1/model.pt
 MODELS_DIR: Final = "models"

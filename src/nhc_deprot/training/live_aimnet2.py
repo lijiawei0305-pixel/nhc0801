@@ -127,6 +127,99 @@ def ema_update_arrays(
             shadow[name] = d * shadow[name] + alpha * arr
 
 
+def state_dict_l2_divergence(
+    state_a: Mapping[str, Any],
+    state_b: Mapping[str, Any],
+    *,
+    parameter_names: Sequence[str],
+) -> dict[str, Any]:
+    """L2 distance between two state dicts over ``parameter_names`` (no torch).
+
+    Accepts anything ``np.asarray`` handles, so the same helper compares numpy
+    fixtures in tests and CPU torch tensors in the live export path. Frozen
+    parameters are excluded by construction: only the named entries are read.
+    """
+
+    names = [str(n) for n in parameter_names]
+    if not names:
+        raise TrainerError("state_dict_l2_divergence needs non-empty parameter_names")
+    per_parameter: dict[str, float] = {}
+    total_square = 0.0
+    max_abs = 0.0
+    for name in names:
+        if name not in state_a or name not in state_b:
+            missing = "state_a" if name not in state_a else "state_b"
+            raise TrainerError(f"parameter {name!r} missing from {missing}")
+        a = np.asarray(state_a[name], dtype=np.float64)
+        b = np.asarray(state_b[name], dtype=np.float64)
+        if a.shape != b.shape:
+            raise TrainerError(
+                f"parameter {name!r} shape mismatch: {a.shape} != {b.shape}"
+            )
+        delta = a - b
+        square = float(np.sum(delta * delta))
+        per_parameter[name] = math.sqrt(square)
+        total_square += square
+        if delta.size:
+            max_abs = max(max_abs, float(np.max(np.abs(delta))))
+    return {
+        "total_l2": math.sqrt(total_square),
+        "max_abs_delta": max_abs,
+        "compared_parameter_count": len(names),
+        "per_parameter_l2": per_parameter,
+    }
+
+
+def ema_export_audit(
+    exported_state: Mapping[str, Any],
+    raw_state: Mapping[str, Any],
+    *,
+    parameter_names: Sequence[str],
+    ema_decay: float | None,
+) -> dict[str, Any]:
+    """Assert the exported weights match what ``ema_decay`` promises (T7).
+
+    ``ema_decay`` / ``ema_enabled`` in a checkpoint payload only echo the config:
+    they stay true even when the export silently wrote raw weights. The one
+    check that cannot be faked is comparing the exported bytes against the live
+    (non-EMA) parameters, so this raises both ways:
+
+    * EMA on but the two are identical → ``EMA_EXPORT_IS_RAW``
+    * EMA off but the two differ → ``EMA_EXPORT_UNEXPECTED_DIVERGENCE``
+
+    Returns the audit payload to attach to the checkpoint receipt.
+    """
+
+    divergence = state_dict_l2_divergence(
+        exported_state, raw_state, parameter_names=parameter_names
+    )
+    total_l2 = float(divergence["total_l2"])
+    ema_enabled = ema_decay is not None
+    diverged = total_l2 > 0.0
+    if ema_enabled and not diverged:
+        raise TrainerError(
+            "EMA_EXPORT_IS_RAW: ema_decay="
+            f"{ema_decay!r} but exported weights equal the live parameters "
+            f"over {divergence['compared_parameter_count']} trained tensors"
+        )
+    if not ema_enabled and diverged:
+        raise TrainerError(
+            "EMA_EXPORT_UNEXPECTED_DIVERGENCE: ema_decay is None but exported "
+            f"weights differ from the live parameters (l2={total_l2:.6g})"
+        )
+    return {
+        "status": "EMA_EXPORT_AUDIT_PASS",
+        "ema_decay": ema_decay,
+        "ema_enabled": ema_enabled,
+        "weights_diverged": diverged,
+        "total_l2": total_l2,
+        "max_abs_delta": float(divergence["max_abs_delta"]),
+        "compared_parameter_count": int(divergence["compared_parameter_count"]),
+        "per_parameter_l2": divergence["per_parameter_l2"],
+        "audit_reads_exported_file": True,
+    }
+
+
 @contextmanager
 def temporary_array_swap(
     live: MutableMapping[str, np.ndarray],
@@ -443,16 +536,32 @@ class LiveAimnet2TrainBackend:
             "ema_enabled": self.ema_decay is not None,
         }
 
-    def export_checkpoint(self, path: Path) -> dict[str, Any]:
-        """Write state_dict + frozen metadata (EMA weights when enabled)."""
+    def _weight_kind(self) -> str:
+        """What the exported ``.pt`` actually holds: "ema" or "raw"."""
 
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with self._use_ema_weights():
-            state = {k: v.detach().cpu() for k, v in self.core.state_dict().items()}
-        payload = {
+        return "ema" if self.ema_decay is not None else "raw"
+
+    def _core_state_snapshot(self) -> dict[str, Any]:
+        """Detached host copy of ``core.state_dict()``.
+
+        ``.clone()`` is load-bearing: ``Tensor.cpu()`` returns *self* when the
+        tensor is already on CPU, so without it the snapshot would alias the
+        live parameters and ``_use_ema_weights``' in-place restore would
+        overwrite the EMA values before ``torch.save`` runs (silently exporting
+        raw weights under EMA metadata). Costs one host copy on CUDA.
+        """
+
+        return {k: v.detach().cpu().clone() for k, v in self.core.state_dict().items()}
+
+    def _checkpoint_payload(
+        self, state: Mapping[str, Any], *, weight_kind: str
+    ) -> dict[str, Any]:
+        """Export bundle for ``state``; ``weight_kind`` is "ema" or "raw" (T7/T8)."""
+
+        payload: dict[str, Any] = {
             "format_version": self.base_bundle.get("format_version"),
             "model_yaml": self.base_bundle.get("model_yaml"),
-            "state_dict": state,
+            "state_dict": dict(state),
             "seed": self.seed,
             "base_sha256": OFFICIAL_AIMNET2_WEIGHT_SHA256,
             "nhc0801_live_finetune": True,
@@ -461,6 +570,7 @@ class LiveAimnet2TrainBackend:
             "trainable_parameter_regex": list(self.config.trainable_parameter_regex),
             "trainable_parameter_names": list(self.trainable_parameter_names),
             "ema_decay": self.ema_decay,
+            "weight_kind": weight_kind,
             "energy_weight": float(self.config.energy_weight),
             "forces_weight": float(self.config.forces_weight),
             "batch_size": int(self.config.batch_size),
@@ -480,7 +590,15 @@ class LiveAimnet2TrainBackend:
         ):
             if key in self.base_bundle:
                 payload[key] = self.base_bundle[key]
-        self.torch.save(payload, path)
+        return payload
+
+    def export_checkpoint(self, path: Path) -> dict[str, Any]:
+        """Write state_dict + frozen metadata (EMA weights when enabled)."""
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with self._use_ema_weights():
+            state = self._core_state_snapshot()
+        self.torch.save(self._checkpoint_payload(state, weight_kind=self._weight_kind()), path)
         raw = path.read_bytes()
         return {
             "path": str(path),
@@ -490,4 +608,37 @@ class LiveAimnet2TrainBackend:
             "train_config_digest": self.train_config_digest,
             "trainable_parameter_count": len(self.trainable_parameter_names),
             "ema_enabled": self.ema_decay is not None,
+            "weight_kind": self._weight_kind(),
         }
+
+    def export_raw_audit_sibling(self, ema_path: Path) -> dict[str, Any]:
+        """Write ``epoch_NNNN.raw.pt`` and audit it against the exported ``.pt``.
+
+        Call right after :meth:`export_checkpoint`. The audit **re-reads the
+        exported file** rather than the in-memory snapshot — that is the only
+        way to prove the bytes on disk carry EMA weights, which no amount of
+        ``ema_decay`` metadata can establish. Fails closed via
+        :func:`ema_export_audit`.
+        """
+
+        ema_path = Path(ema_path)
+        if not ema_path.is_file():
+            raise TrainerError(f"missing exported checkpoint to audit: {ema_path}")
+        on_disk = self.torch.load(ema_path, map_location="cpu", weights_only=False)
+        if not isinstance(on_disk, dict) or "state_dict" not in on_disk:
+            raise TrainerError(f"exported checkpoint is not a bundle: {ema_path}")
+        # Live (non-EMA) parameters: snapshot outside any _use_ema_weights window.
+        raw_state = self._core_state_snapshot()
+        audit = ema_export_audit(
+            on_disk["state_dict"],
+            raw_state,
+            parameter_names=self.trainable_parameter_names,
+            ema_decay=self.ema_decay,
+        )
+        raw_path = ema_path.with_name(f"{ema_path.stem}.raw{ema_path.suffix}")
+        self.torch.save(self._checkpoint_payload(raw_state, weight_kind="raw"), raw_path)
+        audit["exported_weight_path"] = str(ema_path)
+        audit["raw_weight_path"] = str(raw_path)
+        audit["raw_weight_sha256"] = hashlib.sha256(raw_path.read_bytes()).hexdigest()
+        audit["exported_weight_kind"] = on_disk.get("weight_kind")
+        return audit

@@ -361,3 +361,110 @@ def test_live_without_export_checkpoint_writes_meta_only(tmp_path: Path) -> None
         assert Path(ckpt["path"]).is_file()
         assert not Path(ckpt["weight_path"]).is_file()
     assert list(seed_dir.glob("*.pt")) == []
+
+
+class _MockAuditingBackend(_MockLiveExportBackend):
+    """Live backend that also exposes ``export_raw_audit_sibling`` (T7 dual export).
+
+    Mirrors :class:`LiveAimnet2TrainBackend` without torch: writes the raw
+    sibling next to the exported ``.pt`` and returns an audit payload.
+    """
+
+    def __init__(self, *, train_config_digest: str = "b" * 64) -> None:
+        super().__init__(train_config_digest=train_config_digest)
+        self.audited_paths: list[Path] = []
+
+    def export_raw_audit_sibling(self, ema_path: Path) -> dict[str, Any]:
+        ema_path = Path(ema_path)
+        raw_path = ema_path.with_name(f"{ema_path.stem}.raw{ema_path.suffix}")
+        raw_path.write_bytes(b"NHC0801_MOCK_RAW_CHECKPOINT\n")
+        self.audited_paths.append(ema_path)
+        return {
+            "status": "EMA_EXPORT_AUDIT_PASS",
+            "ema_decay": 0.99,
+            "ema_enabled": True,
+            "weights_diverged": True,
+            "total_l2": 0.125,
+            "raw_weight_path": str(raw_path),
+            "exported_weight_path": str(ema_path),
+        }
+
+
+def test_dual_export_audit_runs_on_last_epoch_only(tmp_path: Path) -> None:
+    """T7: raw sibling + on-disk EMA audit at the final checkpoint, not each interval."""
+    layout = _bootstrap_dataset(tmp_path)
+    run_id = "e1f100_mlp_shift"
+    backend = _MockAuditingBackend()
+    cfg = TrainingConfig(
+        seeds=(20260730,),
+        epochs=5,
+        checkpoint_interval_epochs=2,
+        run_id=run_id,
+    )
+    camp = run_multi_seed_training(
+        layout=layout,
+        config=cfg,
+        dry_run=False,
+        aimnet2_train_authorized=True,
+        backend=backend,
+    )
+    assert camp["status"] == "LIVE_TRAIN_PASS"
+    assert [p.name for p in backend.audited_paths] == ["epoch_0005.pt"]
+
+    seed_dir = layout.train_run_seed_dir("g001", run_id, 20260730)
+    assert (seed_dir / "epoch_0005.raw.pt").is_file()
+    # interval checkpoints must not get a raw sibling
+    assert not (seed_dir / "epoch_0002.raw.pt").exists()
+    assert not (seed_dir / "epoch_0004.raw.pt").exists()
+
+    ckpts = {c["epoch"]: c for c in camp["seed_results"][0]["checkpoints"]}
+    assert "ema_export_audit" not in ckpts[2]
+    assert "ema_export_audit" not in ckpts[4]
+    audit = ckpts[5]["ema_export_audit"]
+    assert audit["status"] == "EMA_EXPORT_AUDIT_PASS"
+    assert audit["weights_diverged"] is True
+    # the audit must reach the on-disk meta, not just the in-memory receipt
+    meta = json.loads(Path(ckpts[5]["path"]).read_text(encoding="utf-8"))
+    assert meta["ema_export_audit"]["status"] == "EMA_EXPORT_AUDIT_PASS"
+
+
+def test_backend_without_audit_method_is_unaffected(tmp_path: Path) -> None:
+    """Backwards compatible: backends lacking the method still pass, no raw sibling."""
+    layout = _bootstrap_dataset(tmp_path)
+    run_id = "e1f1_mlp"
+    backend = _MockLiveExportBackend()
+    cfg = TrainingConfig(
+        seeds=(20260730,),
+        epochs=3,
+        checkpoint_interval_epochs=2,
+        run_id=run_id,
+    )
+    camp = run_multi_seed_training(
+        layout=layout,
+        config=cfg,
+        dry_run=False,
+        aimnet2_train_authorized=True,
+        backend=backend,
+    )
+    assert camp["status"] == "LIVE_TRAIN_PASS"
+    seed_dir = layout.train_run_seed_dir("g001", run_id, 20260730)
+    assert not list(seed_dir.glob("*.raw.pt"))
+    for ckpt in camp["seed_results"][0]["checkpoints"]:
+        assert "ema_export_audit" not in ckpt
+
+
+def test_dry_run_never_dual_exports(tmp_path: Path) -> None:
+    """Dry-run must not write weights or run the audit even if the backend can."""
+    layout = _bootstrap_dataset(tmp_path)
+    run_id = "e1f1_mlp"
+    cfg = TrainingConfig(seeds=(20260730,), epochs=3, run_id=run_id)
+    camp = run_multi_seed_training(
+        layout=layout,
+        config=cfg,
+        dry_run=True,
+        dry_run_epochs=3,
+    )
+    seed_dir = layout.train_run_seed_dir("g001", run_id, 20260730)
+    assert not list(seed_dir.glob("*.raw.pt"))
+    for ckpt in camp["seed_results"][0]["checkpoints"]:
+        assert "ema_export_audit" not in ckpt

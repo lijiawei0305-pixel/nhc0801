@@ -373,6 +373,15 @@ def run_one_seed(
                     # Prefer digest from export payload when backend supplies it
                     if weight_export.get("train_config_digest") is not None:
                         ckpt["train_config_digest"] = weight_export["train_config_digest"]
+                    if weight_export.get("weight_kind") is not None:
+                        ckpt["weight_kind"] = weight_export["weight_kind"]
+                # Last epoch only: dual-export raw weights and prove on disk that
+                # the .pt really holds EMA (T7). Backends without the method
+                # (dry-run / test fakes) simply skip it.
+                if epoch == epochs and not dry_run:
+                    audit_fn = getattr(backend, "export_raw_audit_sibling", None)
+                    if callable(audit_fn):
+                        ckpt["ema_export_audit"] = audit_fn(weight_path)
                 write_json(meta_path, ckpt, overwrite=True)
                 result.checkpoints.append(ckpt)
 

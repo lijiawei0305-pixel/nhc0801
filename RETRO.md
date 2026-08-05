@@ -256,3 +256,26 @@
 - **方案**: `scientific_validation` 双键兼容；`LiveParentP01Engine.first_gradient` 归一化为 `gradient_hartree_bohr`。单测覆盖。**已跑完的 g002 收据不会自动变好**，需用修后代码重跑 g002 Epoch-0。g003+ 若在修前已进入 first_grad 同样会中招，rsync 后重启队列。
 - **权威**: `src/nhc_deprot/pipeline/scientific_validation.py` · `live_epoch0.py`。
 
+### R-ema-export-cpu-alias. `[已解决]` EMA 导出在 CPU 上会静默变成 raw 权重
+
+- **现象**: 无（**隐患**，非现行故障）。生产训练走 CUDA，落盘的 `epoch_*.pt` 一直是正确的 EMA 权重。
+- **根因**: `live_aimnet2.export_checkpoint` 原本在 `_use_ema_weights()` 窗口内做
+  `state = {k: v.detach().cpu() for ...}`，而 `torch.save` 在窗口**之外**。
+  `Tensor.cpu()` 在张量已在 CPU 上时**返回自身**（不拷贝），`.detach()` 又共享 storage，
+  于是 `state` 别名活参数；`_use_ema_weights` 退出时 `param.data.copy_(saved)` 是**原地**写，
+  把 raw 值写回同一块内存 → `torch.save` 落盘的是 raw，而 meta 里 `ema_decay` / `ema_enabled` 照样为真。
+  CUDA 上 `.cpu()` 是真拷贝，所以只在 `device="cpu"` 时触发。
+- **关键教训**: **`ema_enabled` 只是配置回声，不是证据。** 任何「读 checkpoint meta 校验 EMA」的审计脚本
+  在这个失效模式下都会报 PASS。唯一能证伪的做法是**把导出的 `.pt` 读回来**与活参数比 L2。
+- **解决方案**:
+  - `_core_state_snapshot()` 加 `.clone()`，快照与设备无关；
+  - `_checkpoint_payload(..., weight_kind)` 让每个 `.pt` 自述 `"ema"` / `"raw"`；
+  - `export_raw_audit_sibling()` 在**末 epoch** 写 `epoch_NNNN.raw.pt`，并重读已导出的 `.pt` 比对；
+  - `ema_export_audit()` 双向 fail-closed：EMA 开却零差异 → `EMA_EXPORT_IS_RAW`；
+    EMA 关却有差异 → `EMA_EXPORT_UNEXPECTED_DIVERGENCE`；
+  - `multi_seed_trainer` 仅在 `epoch == epochs` 且非 dry-run 时接线，审计写进 `epoch_NNNN.meta.json`。
+- **不需要重跑**: 现有 144 个 `.pt` 由 CUDA 路径产出，EMA 正确；只是缺 `.raw.pt` 对照与 `weight_kind`。
+- **测试**: `tests/test_ema_export_audit.py`（16）+ `tests/test_multi_seed_trainer_runs.py`（3）。
+  注意 `temporary_array_swap` **重绑定** dict 项，不是原地写，**不能**用来复现这个 bug；
+  测试里另写了 `np.copyto` 版的 in-place 夹具来镜像 `param.data.copy_()` 的语义。
+
