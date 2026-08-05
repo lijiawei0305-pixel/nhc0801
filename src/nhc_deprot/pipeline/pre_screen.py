@@ -38,6 +38,14 @@ MINDMAP_STEP: Final = 7
 DEFAULT_SHORTLIST_COUNT: Final = 3
 ENDPOINTS: Final = ("cation", "neutral")
 
+# What a screened weight *is*. The epoch-zero official base weight is the
+# yardstick required by NUMERIC_CALIBRATION_V001.epoch_zero_non_regression_rule,
+# not a competitor: it stays in ``ranked`` but never consumes a shortlist slot
+# (20260804 sci-val plan P0-2).
+ROUTE_KIND_FINETUNED: Final = "finetuned_checkpoint"
+ROUTE_KIND_EPOCH_ZERO: Final = "epoch_zero"
+ROUTE_KINDS: Final = (ROUTE_KIND_FINETUNED, ROUTE_KIND_EPOCH_ZERO)
+
 # Hartree/Bohr → eV/Å (same constants as weighted_dataset_writer / d3_projection)
 HARTREE_TO_EV: Final = 27.211386245988
 BOHR_TO_ANGSTROM: Final = 0.529177210903
@@ -89,13 +97,29 @@ class TeacherEndpointReference:
 
 @dataclass(frozen=True, slots=True)
 class CheckpointCandidate:
-    """One trainable checkpoint to pre-screen."""
+    """One weight to pre-screen.
+
+    ``route_kind`` defaults to a fine-tuned checkpoint; pass
+    :data:`ROUTE_KIND_EPOCH_ZERO` for the official base weight so it is scored
+    and ranked but kept out of the sci-val shortlist.
+    """
 
     checkpoint_id: str
     run_id: str
     seed: int
     epoch: int
     weight_path: str | None = None
+    route_kind: str = ROUTE_KIND_FINETUNED
+
+    def validate(self) -> None:
+        if self.route_kind not in ROUTE_KINDS:
+            raise PreScreenError(
+                f"unknown route_kind {self.route_kind!r}; expected one of {ROUTE_KINDS}"
+            )
+
+    @property
+    def is_epoch_zero(self) -> bool:
+        return self.route_kind == ROUTE_KIND_EPOCH_ZERO
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,6 +160,7 @@ class CandidateScreenResult:
             "seed": self.candidate.seed,
             "epoch": self.candidate.epoch,
             "weight_path": self.candidate.weight_path,
+            "route_kind": self.candidate.route_kind,
             "identity_ok": self.identity_ok,
             "topology_preserved": self.topology_preserved,
             "gau_loose_converged": self.gau_loose_converged,
@@ -518,7 +543,18 @@ def aggregate_candidate(
     candidate: CheckpointCandidate,
     per_endpoint: Sequence[EndpointScreenMetrics],
 ) -> CandidateScreenResult:
-    """Aggregate per-endpoint metrics; hard gates require all endpoints pass."""
+    """Aggregate per-endpoint metrics; hard gates require all endpoints pass.
+
+    Ranking key (ascending; hard-fail last)::
+
+        hard_gates → mean_force_rmse → mean_steps → mean_rmsd
+        → run_id / seed / epoch / checkpoint_id
+
+    Force RMSE is the primary soft key (T1 wording + cross-device stability on
+    g001 pre-screen evidence). See
+    ``docs/science/T9_OPERATIONAL_20260805_no_gain_vs_epoch0.md`` §3.
+    Energy loss never enters the key.
+    """
 
     if not per_endpoint:
         raise PreScreenError(
@@ -535,12 +571,13 @@ def aggregate_candidate(
     mean_f = _mean_or_inf(
         [m.force_rmse_at_reference_ev_per_a for m in per_endpoint]
     )
-    # Sort key: hard pass first (0), then RMSD ↑, steps ↑, force RMSE ↑
+    # Sort key: hard pass first (0), then force RMSE ↑, steps ↑, RMSD ↑
+    # (T9_OPERATIONAL §3: force more stable across devices than RMSD/steps)
     rank_key = (
         0 if hard else 1,
-        mean_rmsd,
-        mean_steps,
         mean_f,
+        mean_steps,
+        mean_rmsd,
         candidate.run_id,
         candidate.seed,
         candidate.epoch,
@@ -563,7 +600,7 @@ def aggregate_candidate(
 def rank_candidates(
     results: Sequence[CandidateScreenResult],
 ) -> list[CandidateScreenResult]:
-    """Hard gates → RMSD ↑ → steps ↑ → force RMSE ↑. Never energy loss."""
+    """Hard gates → force RMSE ↑ → steps ↑ → RMSD ↑. Never energy loss."""
 
     return sorted(results, key=lambda r: r.rank_key)
 
@@ -590,6 +627,7 @@ def screen_checkpoint(
 
 def _normalize_candidate(raw: Mapping[str, Any] | CheckpointCandidate) -> CheckpointCandidate:
     if isinstance(raw, CheckpointCandidate):
+        raw.validate()
         return raw
     seed = raw.get("seed")
     epoch = raw.get("epoch")
@@ -600,13 +638,16 @@ def _normalize_candidate(raw: Mapping[str, Any] | CheckpointCandidate) -> Checkp
     if not ckpt:
         ckpt = f"{run_id}_seed_{seed}_epoch_{epoch:04d}"
     weight = raw.get("weight_path")
-    return CheckpointCandidate(
+    candidate = CheckpointCandidate(
         checkpoint_id=str(ckpt),
         run_id=run_id,
         seed=int(seed),
         epoch=int(epoch),
         weight_path=str(weight) if weight is not None else None,
+        route_kind=str(raw.get("route_kind") or ROUTE_KIND_FINETUNED),
     )
+    candidate.validate()
+    return candidate
 
 
 def run_pre_screen_campaign(
@@ -624,8 +665,8 @@ def run_pre_screen_campaign(
 ) -> dict[str, Any]:
     """Screen candidates with zero DFT; write campaign receipt.
 
-    Ranking is fixed: hard gates → RMSD ↑ → steps ↑ → force RMSE ↑.
-    Energy loss is never used.
+    Ranking is fixed: hard gates → force RMSE ↑ → steps ↑ → RMSD ↑.
+    Energy loss is never used. See T9_OPERATIONAL §3 for why force leads.
     """
 
     if not candidates:
@@ -644,9 +685,20 @@ def run_pre_screen_campaign(
 
     ranked = rank_candidates(results)
     shortlist_n = max(0, int(shortlist_count))
-    shortlist = [r for r in ranked if r.hard_gates_passed][:shortlist_n]
-    # If fewer hard-pass than requested, do not fill with hard-fail candidates
-    # (sci-val must only see gate-passing pre-screen shortlist).
+    # epoch-zero is the baseline the contract compares against, not a candidate:
+    # it stays in `ranked` but must not displace a fine-tuned checkpoint from the
+    # shortlist that feeds sci-val (P0-2). Hard-fail candidates never fill a slot
+    # either — sci-val must only see gate-passing entries.
+    shortlist = [
+        r
+        for r in ranked
+        if r.hard_gates_passed and not r.candidate.is_epoch_zero
+    ][:shortlist_n]
+    epoch_zero_row: dict[str, Any] | None = None
+    for position, r in enumerate(ranked, start=1):
+        if r.candidate.is_epoch_zero:
+            epoch_zero_row = {**r.as_dict(), "rank": position}
+            break
 
     sid = screen_id
     if sid is None:
@@ -668,8 +720,8 @@ def run_pre_screen_campaign(
         "scientific_validation_required_before_final_selection": True,
         "energy_loss_used_for_ranking": False,
         "ranking_rule": (
-            "hard_gates_all_pass -> mean_rmsd_asc -> mean_steps_asc "
-            "-> mean_force_rmse_asc"
+            "hard_gates_all_pass -> mean_force_rmse_asc -> mean_steps_asc "
+            "-> mean_rmsd_asc"
         ),
         "shortlist_count_requested": shortlist_n,
         "candidate_count": len(ranked),
@@ -684,6 +736,8 @@ def run_pre_screen_campaign(
             }
             for r in references
         ],
+        "epoch_zero_baseline": epoch_zero_row,
+        "epoch_zero_excluded_from_shortlist": epoch_zero_row is not None,
         "ranked": [r.as_dict() for r in ranked],
         "shortlist": [r.as_dict() for r in shortlist],
         "shortlist_checkpoint_ids": [r.candidate.checkpoint_id for r in shortlist],

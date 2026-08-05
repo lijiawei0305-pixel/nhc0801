@@ -12,8 +12,11 @@ import pytest
 from nhc_deprot.generation.layout import init_generation
 from nhc_deprot.pipeline.pre_screen import (
     CAMPAIGN_SCHEMA,
+    ROUTE_KIND_EPOCH_ZERO,
+    ROUTE_KIND_FINETUNED,
     SELECTION_AUTHORITY,
     CheckpointCandidate,
+    PreScreenError,
     SimulatedPreScreenEngine,
     TeacherEndpointReference,
     forces_hartree_bohr_to_ev_angstrom,
@@ -122,20 +125,23 @@ def _ref(
     )
 
 
-def test_rank_order_hard_gate_then_rmsd_then_steps_then_force() -> None:
-    """Deterministic sort: hard pass → RMSD ↑ → steps ↑ → force RMSE ↑.
+def test_rank_order_hard_gate_then_force_then_steps_then_rmsd() -> None:
+    """Deterministic sort: hard pass → force RMSE ↑ → steps ↑ → RMSD ↑.
 
     Energy is present on the fake engine but must not affect order.
     """
 
     refs = [_ref("R1", "cation"), _ref("R1", "neutral")]
 
-    # A: hard pass, medium RMSD (nudge 0.05), few steps, medium force
-    # B: hard pass, low RMSD (nudge 0.01), many steps — should rank first (RMSD)
-    # C: hard fail (not converged) — last despite tiny RMSD
-    # D: hard pass, same RMSD as B, fewer steps than B — before B if RMSD equal
-    #    (we give D same nudge as B, fewer steps)
-    # E: hard pass, same RMSD+steps as D, lower force RMSE — before D
+    # Fixture metrics (ref forces are zero → force RMSE scales with |F_pred|):
+    #   ckpt_E: hard, force~0.01, steps=10, atom0_dx=0.01
+    #   ckpt_D: hard, force~0.1,  steps=10, atom0_dx=0.01
+    #   ckpt_B: hard, force~0.1,  steps=40, atom0_dx=0.01
+    #   ckpt_A: hard, force~0.2,  steps=5,  atom0_dx=0.05
+    #   ckpt_C: hard-fail (not converged) despite best geometry/forces
+    # Hand rank under force → steps → rmsd:
+    #   E (best force) → D (same force as B, fewer steps) → B → A (worst force)
+    #   → C (hard fail last). Energy must not reorder.
 
     # atom0_dx = non-rigid deformation (Kabsch kills pure COM translation)
     outcomes = {
@@ -208,9 +214,9 @@ def test_rank_order_hard_gate_then_rmsd_then_steps_then_force() -> None:
     ranked = rank_candidates(results)
     order = [r.candidate.checkpoint_id for r in ranked]
 
-    # Expected among hard-pass: E (best force among 0.01-rmsd/10-step) →
-    # D (same rmsd/steps, worse force) → B (same rmsd, more steps) → A (worse rmsd)
-    # then C (hard fail)
+    # Hand-derived under hard → force ↑ → steps ↑ → rmsd ↑:
+    # E (force 0.01) → D (force 0.1, steps 10) → B (force 0.1, steps 40) →
+    # A (force 0.2) → C (hard fail)
     assert order == ["ckpt_E", "ckpt_D", "ckpt_B", "ckpt_A", "ckpt_C"]
     assert ranked[0].hard_gates_passed is True
     assert ranked[-1].hard_gates_passed is False
@@ -345,3 +351,185 @@ def test_shortlist_excludes_hard_fail_even_if_top_k_not_filled() -> None:
     )
     assert campaign["shortlist_checkpoint_ids"] == ["only_good"]
     assert campaign["final_model_selected"] is False
+
+
+def test_rank_prefers_force_over_rmsd_when_the_two_disagree() -> None:
+    """Discriminating case: this ordering is only correct under the new rule.
+
+    The main ranking fixture happens to give the same order under both the old
+    (rmsd -> steps -> force) and new (force -> steps -> rmsd) keys, so it cannot
+    catch a regression of the key order. Here the two keys point opposite ways:
+
+      ckpt_force_best: force 0.01 (best), rmsd ~0.20 (worst)
+      ckpt_rmsd_best : force 0.30 (worst), rmsd ~0.01 (best)
+
+    Old key ranks rmsd_best first; new key ranks force_best first (T1 wording +
+    cross-device stability, T9_OPERATIONAL §3).
+    """
+
+    refs = [_ref("R1", "cation"), _ref("R1", "neutral")]
+    outcomes = {
+        "ckpt_force_best": {
+            "atom0_dx": 0.20,
+            "steps": 10,
+            "forces_at_reference_ev_per_a": [[0.01, 0.0, 0.0]] * 3,
+            "converged": True,
+        },
+        "ckpt_rmsd_best": {
+            "atom0_dx": 0.01,
+            "steps": 10,
+            "forces_at_reference_ev_per_a": [[0.30, 0.0, 0.0]] * 3,
+            "converged": True,
+        },
+    }
+    engine = SimulatedPreScreenEngine(outcomes=outcomes)
+    candidates = [
+        CheckpointCandidate("ckpt_rmsd_best", "run_x", 1, 10),
+        CheckpointCandidate("ckpt_force_best", "run_x", 1, 20),
+    ]
+    results = [screen_checkpoint(engine, c, refs) for c in candidates]
+    ranked = rank_candidates(results)
+
+    assert [r.candidate.checkpoint_id for r in ranked] == [
+        "ckpt_force_best",
+        "ckpt_rmsd_best",
+    ]
+    # Guard the premise: the two keys really do disagree on this fixture.
+    winner, loser = ranked[0], ranked[1]
+    assert winner.mean_force_rmse_at_reference_ev_per_a < (
+        loser.mean_force_rmse_at_reference_ev_per_a
+    )
+    assert winner.mean_rmsd_to_reference_angstrom > (
+        loser.mean_rmsd_to_reference_angstrom
+    )
+
+
+# --- epoch-zero baseline must not consume a shortlist slot -------------------
+
+
+def _passing_outcome(force: float, dx: float = 0.01, steps: int = 10) -> dict:
+    return {
+        "atom0_dx": dx,
+        "steps": steps,
+        "forces_at_reference_ev_per_a": [[force, 0.0, 0.0]] * 3,
+        "converged": True,
+    }
+
+
+def test_epoch_zero_candidate_ranks_but_takes_no_shortlist_slot(tmp_path: Path) -> None:
+    """e0 is the yardstick, not a competitor (20260804 sci-val plan P0-2).
+
+    The contract's epoch_zero_non_regression_rule needs e0's numbers, so it must
+    stay visible in `ranked` and get its own receipt section — but it must not
+    displace a fine-tuned candidate from the shortlist that feeds sci-val.
+    """
+
+    layout, _, _ = init_generation(nhc0801_root=tmp_path / "NHC0801")
+    refs = [_ref("R1", "cation"), _ref("R1", "neutral")]
+    # e0 has the best force, so under the new key it would otherwise rank first.
+    outcomes = {
+        "epoch_zero": _passing_outcome(0.01),
+        "ft_good": _passing_outcome(0.02),
+        "ft_ok": _passing_outcome(0.03),
+        "ft_meh": _passing_outcome(0.04),
+    }
+    candidates = [
+        CheckpointCandidate(
+            "epoch_zero", "epoch_zero", 0, 0, route_kind=ROUTE_KIND_EPOCH_ZERO
+        ),
+        CheckpointCandidate("ft_good", "run_x", 1, 10),
+        CheckpointCandidate("ft_ok", "run_x", 1, 20),
+        CheckpointCandidate("ft_meh", "run_x", 1, 30),
+    ]
+    campaign = run_pre_screen_campaign(
+        candidates=candidates,
+        references=refs,
+        engine=SimulatedPreScreenEngine(outcomes=outcomes),
+        layout=layout,
+        shortlist_count=2,
+    )
+
+    # ranked keeps e0 and it does come first on merit
+    assert campaign["ranked"][0]["checkpoint_id"] == "epoch_zero"
+    assert campaign["ranked"][0]["route_kind"] == ROUTE_KIND_EPOCH_ZERO
+    # but the shortlist is fine-tuned candidates only, and still gets 2 of them
+    assert campaign["shortlist_checkpoint_ids"] == ["ft_good", "ft_ok"]
+    assert all(r["route_kind"] == ROUTE_KIND_FINETUNED for r in campaign["shortlist"])
+    # e0 is reported separately as the baseline
+    assert campaign["epoch_zero_baseline"]["checkpoint_id"] == "epoch_zero"
+    assert campaign["epoch_zero_baseline"]["rank"] == 1
+    assert campaign["epoch_zero_excluded_from_shortlist"] is True
+
+
+def test_route_kind_defaults_to_finetuned() -> None:
+    c = CheckpointCandidate("x", "run_x", 1, 10)
+    assert c.route_kind == ROUTE_KIND_FINETUNED
+
+
+def test_campaign_without_epoch_zero_reports_null_baseline(tmp_path: Path) -> None:
+    layout, _, _ = init_generation(nhc0801_root=tmp_path / "NHC0801")
+    refs = [_ref("R1", "cation")]
+    campaign = run_pre_screen_campaign(
+        candidates=[CheckpointCandidate("ft_only", "run_x", 1, 10)],
+        references=refs,
+        engine=SimulatedPreScreenEngine(outcomes={"ft_only": _passing_outcome(0.02)}),
+        layout=layout,
+        shortlist_count=2,
+    )
+    assert campaign["epoch_zero_baseline"] is None
+    assert campaign["epoch_zero_excluded_from_shortlist"] is False
+    assert campaign["shortlist_checkpoint_ids"] == ["ft_only"]
+
+
+def test_epoch_zero_only_campaign_yields_empty_shortlist(tmp_path: Path) -> None:
+    """A baseline-only screen must not produce a sci-val shortlist at all."""
+
+    layout, _, _ = init_generation(nhc0801_root=tmp_path / "NHC0801")
+    refs = [_ref("R1", "cation")]
+    campaign = run_pre_screen_campaign(
+        candidates=[
+            CheckpointCandidate(
+                "epoch_zero", "epoch_zero", 0, 0, route_kind=ROUTE_KIND_EPOCH_ZERO
+            )
+        ],
+        references=refs,
+        engine=SimulatedPreScreenEngine(outcomes={"epoch_zero": _passing_outcome(0.01)}),
+        layout=layout,
+        shortlist_count=3,
+    )
+    assert campaign["shortlist_checkpoint_ids"] == []
+    assert campaign["status"] == "PRE_SCREEN_EMPTY_SHORTLIST"
+    assert campaign["epoch_zero_baseline"]["checkpoint_id"] == "epoch_zero"
+
+
+def test_candidates_json_carries_route_kind(tmp_path: Path) -> None:
+    from nhc_deprot.pipeline.ablation_cli import candidates_from_json_file
+
+    p = tmp_path / "cands.json"
+    p.write_text(
+        json.dumps(
+            {
+                "candidates": [
+                    {
+                        "checkpoint_id": "epoch_zero",
+                        "run_id": "epoch_zero",
+                        "seed": 0,
+                        "epoch": 0,
+                        "route_kind": ROUTE_KIND_EPOCH_ZERO,
+                    },
+                    {"checkpoint_id": "ft", "run_id": "run_x", "seed": 1, "epoch": 10},
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+    got = {c.checkpoint_id: c.route_kind for c in candidates_from_json_file(p)}
+    assert got == {
+        "epoch_zero": ROUTE_KIND_EPOCH_ZERO,
+        "ft": ROUTE_KIND_FINETUNED,
+    }
+
+
+def test_unknown_route_kind_fails_closed() -> None:
+    with pytest.raises(PreScreenError, match="route_kind"):
+        CheckpointCandidate("x", "run_x", 1, 10, route_kind="something_else").validate()

@@ -134,11 +134,12 @@ RMSD 是 LBFGS 弛豫**之后**量的，落进哪个局部极小是离散选择�
 
 ### 5.2 需要用户拍板（本文不擅自执行）
 
-| 事项 | 说明 |
-| --- | --- |
-| **预筛排序规则** | 现为 `RMSD → steps → force RMSE`（`pre_screen.rank_candidates`）。§3.1/§3.3 说前两键不可跨运行比较。建议改为 **force RMSE 主序 + RMSD 只报簇归属**。这改的是 `NUMERIC_CALIBRATION_V001` 口径 → **需授权 + 版本号** |
-| **P2 DFT 是否继续** | §3.4 不支持「省 DFT」。是否继续跑 e0 + sci-val 由你定 |
-| **T4 措辞** | `AGENTS.md` T4 与多份 plan 写「forces_weight=100 优于 1」。本轮证据：**帧级成立、T1 几何/力指标上反向**。改措辞属科学口径 |
+| 事项 | 说明 | 处理状态 |
+| --- | --- | --- |
+| **预筛排序规则** | 现为 `RMSD → steps → force RMSE`（`pre_screen.rank_candidates`）。§3.1/§3.3 说前两键不可跨运行比较。建议改为 **force RMSE 主序 + RMSD 只报簇归属**。排序键在代码里，**不在** `NUMERIC_CALIBRATION_V001`——本轮核对后确认无需 bump 合同 | **已处理（2026-08-05）**：排序改为 `hard → force RMSE ↑ → steps ↑ → mean RMSD ↑ → tiebreak`。**未**做 RMSD 分簇；**未**改任何合同数值。连带实现 e0 排除，见下行 |
+| **e0 占短名单席位**（新，排序改动的连带后果） | 新规则下 e0 的 force RMSE 全场最低（0.060942），会排第 1 并吃掉一个短名单席位。但合同 `epoch_zero_non_regression_rule` 要的是拿 e0 作**基线**对比，不是让它当**候选**竞争 | **已处理（2026-08-05）**：实现前序计划搁置的 P0-2——`CheckpointCandidate.route_kind`（默认 `finetuned_checkpoint`；官方基座传 `epoch_zero`）。e0 照常参与排名、照常出现在 `ranked`，但不进短名单；收据新增 `epoch_zero_baseline`（含真实名次）与 `epoch_zero_excluded_from_shortlist` |
+| **P2 DFT 是否继续** | §3.4 不支持「省 DFT」。是否继续跑 e0 + sci-val 由你定 | （未动） |
+| **T4 措辞** | `AGENTS.md` T4 与多份 plan 写「forces_weight=100 优于 1」。本轮证据：**帧级成立、T1 几何/力指标上反向**。改措辞属科学口径 | **已处理（2026-08-05）**：历史 plan 原文保留，追加「2026-08-05 订正」块（`20260804_morning_results.md`、`20260804_ablation_phase1_force_table.md`）；`ablation_cli` 加并列说明「力主导 ≠ T1 更好」。**未**改 T4 方法规则本身 |
 
 ### 5.3 重新审视本结论的条件
 

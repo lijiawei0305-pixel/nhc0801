@@ -3,7 +3,11 @@
 Logic lives here; ``scripts/nhc0801_train_ablation.py`` is a thin argparse wrapper.
 
 Phase-1 matrix (plan §4 / AGENTS T4): forces_weight **100** (not 10) is the
-force-dominant axis. Shared frozen knobs come from :class:`TrainingConfig`.
+force-dominant axis (effective E:F enters the force-led regime). That is a
+loss-weight fact only — **force-dominant ≠ better on T1 pre-screen metrics**;
+on g001 pilot, T1 force RMSE / RMSD favored f1 over f100 (see
+``docs/science/T9_OPERATIONAL_20260805_no_gain_vs_epoch0.md`` §2.3). Shared
+frozen knobs come from :class:`TrainingConfig`.
 """
 
 from __future__ import annotations
@@ -284,6 +288,7 @@ def run_train_ablation(
         "notes": [
             "phase-1 matrix: e1f1_mlp / e1f100_mlp / e1f1_mlp_shift / e1f100_mlp_shift",
             "forces_weight=100 is the force-dominant axis (AGENTS T4; not 10)",
+            "force-dominant ≠ better on T1 pre-screen metrics (T9_OPERATIONAL §2.3)",
             "quick-val never final-selects; sci-val / pre-screen still required",
         ],
     }
@@ -378,6 +383,7 @@ def main_train_ablation(
             "run_ids": list(DEFAULT_ABLATION_RUN_IDS),
             "notes": [
                 "forces_weight=100 (not 10) for force-dominant recipes (T4)",
+                "force-dominant ≠ better on T1 pre-screen metrics (T9_OPERATIONAL §2.3)",
             ],
         }
         print(json.dumps(payload, indent=2, sort_keys=True))

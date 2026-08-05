@@ -23,7 +23,9 @@ from nhc_deprot.generation.layout import (
     resolve_layout,
 )
 from nhc_deprot.pipeline.pre_screen import (
+    ROUTE_KIND_FINETUNED,
     CheckpointCandidate,
+    PreScreenError,
     SimulatedPreScreenEngine,
     TeacherEndpointReference,
     load_teacher_references_for_batch,
@@ -151,15 +153,21 @@ def candidates_from_json_file(path: Path) -> list[CheckpointCandidate]:
             row.get("checkpoint_id") or f"{rid}_seed_{seed}_epoch_{epoch:04d}"
         )
         weight = row.get("weight_path")
-        out.append(
-            CheckpointCandidate(
-                checkpoint_id=ckpt,
-                run_id=rid,
-                seed=seed,
-                epoch=epoch,
-                weight_path=str(weight) if weight is not None else None,
-            )
+        candidate = CheckpointCandidate(
+            checkpoint_id=ckpt,
+            run_id=rid,
+            seed=seed,
+            epoch=epoch,
+            weight_path=str(weight) if weight is not None else None,
+            # Mark the official base weight so it is ranked but kept out of the
+            # sci-val shortlist (pre_screen.ROUTE_KIND_EPOCH_ZERO).
+            route_kind=str(row.get("route_kind") or ROUTE_KIND_FINETUNED),
         )
+        try:
+            candidate.validate()
+        except PreScreenError as exc:
+            raise PreScreenCliError(str(exc)) from exc
+        out.append(candidate)
     if not out:
         raise PreScreenCliError(f"parsed zero candidates from {path}")
     return out
