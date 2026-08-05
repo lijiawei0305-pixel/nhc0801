@@ -279,3 +279,26 @@
   注意 `temporary_array_swap` **重绑定** dict 项，不是原地写，**不能**用来复现这个 bug；
   测试里另写了 `np.copyto` 版的 in-place 夹具来镜像 `param.data.copy_()` 的语义。
 
+### R-prescreen-rmsd-basin-quantized. `[已解决/口径]` 预筛 RMSD 换设备就换 basin，不可复现
+
+- **现象**: 同一批权重、同一套参考几何（钉在归档 fc=2）、同一 250 步预算，只把
+  CUDA 换成 CPU 重跑 seed 20260730 的 16 个重叠候选 → **4/16（25%）的 `mean_rmsd`
+  跳变约 0.05 Å（相对 ~40%）**。`e1f100_mlp ep10` 与 `e1f1_mlp ep10` 直接**互换**。
+- **根因**: `mean_rmsd_to_reference_angstrom` 是 ASE LBFGS 从固定起点弛豫**之后**量的。
+  落进哪个局部极小是**离散选择**，浮点级扰动就能翻。seed 730 的 64 个观测聚成
+  **3 个簇**（0.122–0.128 / 0.171–0.193 / 0.203–0.231），簇内跨度 << 簇间间隔。
+  这不是「噪声大」，是**指标近似离散标签**。
+- **连带**: 这解释了此前「seed 方差 >> 配方方差、前 9 名全是 seed 730」——那是 basin
+  归属分层，不是平滑的配方效应。`live_phase1_v002` 的 RMSD 排名有约 1/4 是设备相关的。
+- **相对稳定的指标**: `mean_force_rmse_at_reference_ev_per_a` 在参考几何上单点求值，
+  不经弛豫，重跑偏差仅 ~1e-3–1.6e-2（2–8%），**无换簇**。`mean_aimnet2_steps` 居中。
+- **口径（已升级为规则）**:
+  1. **RMSD 单值不得作为配方/epoch 的排序依据**；只能作 basin 归属的离散读数
+     （报「落在哪个簇」而非小数点后四位）。
+  2. 跨设备/跨环境比较预筛结果前，必须先跑重叠候选的复现校验。
+  3. T1 三键里，**force RMSE 是目前唯一可跨运行比较的连续量**。
+- **产物**: `pre_screen_g001/live_seed730_epoch_axis_v1/`（48 候选全 epoch 轴 + `epoch_curve.json`
+  + `paired_recipe_contrast.json`）；代码 `pipeline/paired_recipe_contrast.py`、
+  `pre_screen.load_teacher_references_for_batch(teacher_batch_dir=...)` 只读钉参考集。
+- **注意**: 归档 `_archive_teacher_maxsteps100_frame2_*` 是当前唯一有 `is_terminal` 的
+  Val 参考；规范 `teacher_gpu_g001/` 正在被 m250 重算（无 manifest）。两套参考**不可混用**。

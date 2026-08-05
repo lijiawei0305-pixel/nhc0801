@@ -227,11 +227,14 @@ def resolve_references(
     batch_id: str,
     root_ids: Sequence[str],
     allow_synthetic: bool,
+    teacher_batch_dir: Path | None = None,
 ) -> list[TeacherEndpointReference]:
     """Load teacher refs; optionally fall back to synthetic for dry smoke."""
 
     try:
-        return load_teacher_references_for_batch(layout, batch_id, root_ids)
+        return load_teacher_references_for_batch(
+            layout, batch_id, root_ids, teacher_batch_dir=teacher_batch_dir
+        )
     except Exception as exc:  # noqa: BLE001
         if not allow_synthetic:
             raise PreScreenCliError(
@@ -441,6 +444,7 @@ def run_pre_screen_cli(
     write: bool = True,
     device: str | None = None,
     max_steps: int | None = None,
+    teacher_batch_dir: Path | None = None,
 ) -> dict[str, Any]:
     """Wire candidates + refs + engine into :func:`run_pre_screen_campaign`.
 
@@ -492,6 +496,7 @@ def run_pre_screen_cli(
         batch_id=batch_id,
         root_ids=root_ids,
         allow_synthetic=False,
+        teacher_batch_dir=teacher_batch_dir,
     )
     try:
         factory = make_engine_factory(max_steps=max_steps, device=device)
@@ -592,6 +597,16 @@ def build_pre_screen_parser() -> argparse.ArgumentParser:
         help="Override GAU_LOOSE max ASE LBFGS steps (default: contract maximum_steps)",
     )
     p.add_argument(
+        "--teacher-batch-dir",
+        type=Path,
+        default=None,
+        help=(
+            "Pin teacher reference geometries to this dir (read-only). "
+            "Use to reproduce an earlier screen while teacher_gpu_g00N/ is "
+            "being recomputed; mixing reference sets makes screens incomparable."
+        ),
+    )
+    p.add_argument(
         "--write",
         action=argparse.BooleanOptionalAction,
         default=True,
@@ -669,6 +684,7 @@ def main_pre_screen(
             write=bool(args.write),
             device=args.device,
             max_steps=args.max_steps,
+            teacher_batch_dir=args.teacher_batch_dir,
         )
     except Exception as exc:  # noqa: BLE001
         print(

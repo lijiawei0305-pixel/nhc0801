@@ -364,10 +364,24 @@ def load_teacher_references_for_batch(
     layout: GenerationLayout,
     batch_id: str,
     root_ids: Sequence[str],
+    teacher_batch_dir: Path | None = None,
 ) -> list[TeacherEndpointReference]:
-    """Load cation+neutral references for each root under teacher_gpu_g00N/."""
+    """Load cation+neutral references for each root under teacher_gpu_g00N/.
 
-    teacher_root = layout.teacher_batch_dir(batch_id)
+    ``teacher_batch_dir`` pins the reference set to a specific directory
+    (read-only). Needed to reproduce an earlier screen while the canonical
+    ``teacher_gpu_g00N/`` is being recomputed: RMSD is measured *against* these
+    geometries, so mixing reference sets makes screens incomparable. Historical
+    ``frame_count == 2`` products stay read-only (AGENTS T5).
+    """
+
+    teacher_root = (
+        Path(teacher_batch_dir)
+        if teacher_batch_dir is not None
+        else layout.teacher_batch_dir(batch_id)
+    )
+    if not teacher_root.is_dir():
+        raise PreScreenError(f"teacher reference dir missing: {teacher_root}")
     refs: list[TeacherEndpointReference] = []
     for root_id in root_ids:
         for endpoint in ENDPOINTS:
