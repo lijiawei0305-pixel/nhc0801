@@ -302,3 +302,23 @@
   `pre_screen.load_teacher_references_for_batch(teacher_batch_dir=...)` 只读钉参考集。
 - **注意**: 归档 `_archive_teacher_maxsteps100_frame2_*` 是当前唯一有 `is_terminal` 的
   Val 参考；规范 `teacher_gpu_g001/` 正在被 m250 重算（无 manifest）。两套参考**不可混用**。
+### R-null-by-construction-control. `[已解决/方法]` 对照实验的受控变量够不到待检机制
+
+- **现象**: 为检验「预筛 RMSD 的三簇结构是不是 `frame_count==2` 贫瘠参考的假象」，
+  花约 4 GPU·小时 parent DFT 重算了 4 个 Val 端点的 m250 全轨迹参考，再做 A/B 对照预筛。
+  结果三簇原样复现、48 个候选**跨簇 0 个**，一度被写成「替代解释被排除」。
+- **根因**: 实验**构造性地不可能**产生别的结果。basin 归属由 AIMNet2 从
+  **起始几何**出发的 LBFGS 弛豫决定；参考集里的终点几何只是 RMSD 的**度量靶**。
+  而两套参考的 `frame_0000` 是 **bit-identical**（RMSD = 0.000e+00，4/4 端点）——
+  两次 teacher 都从同一份 gold xyz 起算。弛豫输入相同 ⇒ 轨迹相同
+  （**Δsteps = 0，48/48**）⇒ 落点必然相同。观测到的 ΔRMSD +2e−5 Å 只是靶点移了 1e−4 Å。
+- **教训（已升级为规则）**: 设计对照实验时，先问一句
+  **「我要改的这个量，在因果链上能不能到达待检机制？」**
+  本例中「参考集丰富度」根本不进入弛豫过程，只进入事后度量。
+  一个诊断信号是：**Δsteps 精确为 0** 说明计算过程逐位相同，那么任何"差异"都只可能是事后度量的位移。
+- **正确的检验**: 多起点扰动——对**起始几何**加不同量级随机位移后重新弛豫，
+  看落点在多小的扰动下开始跨簇。零 DFT、纯 CPU。
+- **仍有价值的产出**: m250 与旧 maxsteps=100 收敛到同一 parent 极小（终点差 5e−5…3.6e−4 Å），
+  是 teacher 流水线跨 maxsteps 变更的一致性验证；规范路径下补齐了全轨迹 Val 参考；
+  112 个孤儿帧已归档（`_archive_orphan_m250_partial_20260805T125904Z/`）。
+- **产物**: `pre_screen_g001/refcmp_{fc2,m250}_v1/`；`teacher_gpu_g001/{KZYK,RMEQ}/` batch `g001_val_reference_m250`。
