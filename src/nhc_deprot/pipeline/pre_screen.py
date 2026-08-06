@@ -37,6 +37,12 @@ SELECTION_AUTHORITY: Final = "pre_screen_shortlist_only_not_final"
 MINDMAP_STEP: Final = 7
 DEFAULT_SHORTLIST_COUNT: Final = 3
 ENDPOINTS: Final = ("cation", "neutral")
+# Multi-start replica measurement (T9 §3.1 basin evidence, 2026-08-06).
+# replicas=1 keeps the historical single-shot path bit-identical.
+DEFAULT_REPLICAS: Final = 1
+DEFAULT_REPLICA_EPSILON_ANGSTROM: Final = 1e-4
+DEFAULT_BASIN_GAP_ANGSTROM: Final = 0.01
+FORCE_REPLICA_SPREAD_TOL: Final = 1e-12
 
 # What a screened weight *is*. The epoch-zero official base weight is the
 # yardstick required by NUMERIC_CALIBRATION_V001.epoch_zero_non_regression_rule,
@@ -152,9 +158,24 @@ class CandidateScreenResult:
     mean_aimnet2_steps_to_gau_loose: float = math.inf
     mean_force_rmse_at_reference_ev_per_a: float = math.inf
     rank_key: tuple[Any, ...] = ()
+    # Multi-replica fields (only meaningful when replicas > 1; omitted from
+    # as_dict when replicas == 1 so single-shot receipts stay byte-stable).
+    replicas: int = 1
+    replica_epsilon_angstrom: float | None = None
+    basin_gap_angstrom: float | None = None
+    modal_basin_fraction: float | None = None
+    basin_count: int | None = None
+    deterministic: bool | None = None
+    rmsd_p10: float | None = None
+    rmsd_p90: float | None = None
+    steps_min: float | None = None
+    steps_max: float | None = None
+    basin_clusters: list[dict[str, Any]] | None = None
+    replica_mean_rmsds: list[float] | None = None
+    replica_mean_steps: list[float] | None = None
 
     def as_dict(self) -> dict[str, Any]:
-        return {
+        out: dict[str, Any] = {
             "checkpoint_id": self.candidate.checkpoint_id,
             "run_id": self.candidate.run_id,
             "seed": self.candidate.seed,
@@ -175,6 +196,25 @@ class CandidateScreenResult:
             "energy_loss_used_for_ranking": False,
             "final_model_selected": False,
         }
+        if int(self.replicas) > 1:
+            out.update(
+                {
+                    "replicas": int(self.replicas),
+                    "replica_epsilon_angstrom": self.replica_epsilon_angstrom,
+                    "basin_gap_angstrom": self.basin_gap_angstrom,
+                    "modal_basin_fraction": self.modal_basin_fraction,
+                    "basin_count": self.basin_count,
+                    "deterministic": self.deterministic,
+                    "rmsd_p10": self.rmsd_p10,
+                    "rmsd_p90": self.rmsd_p90,
+                    "steps_min": self.steps_min,
+                    "steps_max": self.steps_max,
+                    "basin_clusters": self.basin_clusters,
+                    "replica_mean_rmsds": self.replica_mean_rmsds,
+                    "replica_mean_steps": self.replica_mean_steps,
+                }
+            )
+        return out
 
 
 def forces_hartree_bohr_to_ev_angstrom(
@@ -605,6 +645,202 @@ def rank_candidates(
     return sorted(results, key=lambda r: r.rank_key)
 
 
+def _percentile_sorted(sorted_vals: Sequence[float], q: float) -> float:
+    """Linear interpolation percentile; ``sorted_vals`` non-empty ascending."""
+
+    if not sorted_vals:
+        return math.inf
+    if len(sorted_vals) == 1:
+        return float(sorted_vals[0])
+    q = min(1.0, max(0.0, float(q)))
+    pos = q * (len(sorted_vals) - 1)
+    lo = int(math.floor(pos))
+    hi = int(math.ceil(pos))
+    if lo == hi:
+        return float(sorted_vals[lo])
+    w = pos - lo
+    return float(sorted_vals[lo] * (1.0 - w) + sorted_vals[hi] * w)
+
+
+def _median(values: Sequence[float]) -> float:
+    finite = [float(v) for v in values if math.isfinite(float(v))]
+    if not finite:
+        return math.inf
+    s = sorted(finite)
+    n = len(s)
+    mid = n // 2
+    if n % 2 == 1:
+        return float(s[mid])
+    return float(0.5 * (s[mid - 1] + s[mid]))
+
+
+def cluster_scalar_values(
+    values: Sequence[float],
+    *,
+    gap: float = DEFAULT_BASIN_GAP_ANGSTROM,
+) -> list[list[float]]:
+    """Chain-cluster sorted values; new cluster when adjacent gap > ``gap``."""
+
+    xs = sorted(float(v) for v in values if math.isfinite(float(v)))
+    if not xs:
+        return []
+    clusters: list[list[float]] = [[xs[0]]]
+    for x in xs[1:]:
+        if x - clusters[-1][-1] > float(gap):
+            clusters.append([x])
+        else:
+            clusters[-1].append(x)
+    return clusters
+
+
+def basin_statistics(
+    rmsds: Sequence[float],
+    *,
+    gap: float = DEFAULT_BASIN_GAP_ANGSTROM,
+) -> dict[str, Any]:
+    """Basin labels from replica mean-RMSD samples (gap clustering)."""
+
+    clusters = cluster_scalar_values(rmsds, gap=gap)
+    n = sum(len(c) for c in clusters)
+    if n == 0:
+        return {
+            "basin_count": 0,
+            "modal_basin_fraction": 0.0,
+            "deterministic": False,
+            "basin_clusters": [],
+        }
+    sizes = [len(c) for c in clusters]
+    modal_n = max(sizes)
+    basin_clusters = [
+        {
+            "n": len(c),
+            "fraction": len(c) / n,
+            "center": float(sum(c) / len(c)),
+            "rmsd_min": float(min(c)),
+            "rmsd_max": float(max(c)),
+        }
+        for c in clusters
+    ]
+    # stable order: largest basin first, then by center
+    basin_clusters.sort(key=lambda d: (-int(d["n"]), float(d["center"])))
+    frac = modal_n / n
+    return {
+        "basin_count": len(clusters),
+        "modal_basin_fraction": float(frac),
+        "deterministic": frac == 1.0,
+        "basin_clusters": basin_clusters,
+    }
+
+
+def replica_rng_seed(
+    candidate: CheckpointCandidate,
+    *,
+    replica_index: int,
+    base_seed: int = 0,
+) -> int:
+    """Deterministic per-(candidate, replica) RNG seed."""
+
+    # Keep non-negative 31-bit for numpy Generator.
+    raw = (
+        int(base_seed)
+        + int(candidate.seed) * 1_000_003
+        + int(candidate.epoch) * 97
+        + int(replica_index) * 1_000_033
+        + sum(ord(ch) for ch in candidate.checkpoint_id) * 13
+    )
+    return int(raw % 2_147_483_647)
+
+
+def aggregate_replica_results(
+    candidate: CheckpointCandidate,
+    replica_results: Sequence[CandidateScreenResult],
+    *,
+    replica_epsilon_angstrom: float,
+    basin_gap_angstrom: float = DEFAULT_BASIN_GAP_ANGSTROM,
+    force_spread_tol: float = FORCE_REPLICA_SPREAD_TOL,
+) -> CandidateScreenResult:
+    """Collapse N single-shot results into one ranked measurement.
+
+    - force RMSE: must be identical across replicas (fail closed otherwise);
+      uses the common value (still single-shot physics at the reference geom).
+    - steps / RMSD ranking values: **median** across replicas.
+    - basin stats from the N mean-RMSD samples (report only; not in rank_key).
+    - hard_gates: all replicas must hard-pass (conservative).
+    """
+
+    if not replica_results:
+        raise PreScreenError(
+            f"no replica results for checkpoint {candidate.checkpoint_id}"
+        )
+    n = len(replica_results)
+    forces = [float(r.mean_force_rmse_at_reference_ev_per_a) for r in replica_results]
+    finite_f = [f for f in forces if math.isfinite(f)]
+    if len(finite_f) != n:
+        raise PreScreenError(
+            f"non-finite force RMSE among replicas for {candidate.checkpoint_id!r}"
+        )
+    spread = max(finite_f) - min(finite_f)
+    if spread > float(force_spread_tol):
+        raise PreScreenError(
+            f"force RMSE replica spread {spread:.3e} > {force_spread_tol} "
+            f"for checkpoint {candidate.checkpoint_id!r} "
+            f"(forces={finite_f!r}); model forward may be non-deterministic"
+        )
+    mean_f = float(finite_f[0])
+
+    rmsds = [float(r.mean_rmsd_to_reference_angstrom) for r in replica_results]
+    steps = [float(r.mean_aimnet2_steps_to_gau_loose) for r in replica_results]
+    med_rmsd = _median(rmsds)
+    med_steps = _median(steps)
+    s_rmsd = sorted(v for v in rmsds if math.isfinite(v))
+    s_steps = sorted(v for v in steps if math.isfinite(v))
+    basin = basin_statistics(rmsds, gap=basin_gap_angstrom)
+
+    hard = all(r.hard_gates_passed for r in replica_results)
+    identity_ok = all(r.identity_ok for r in replica_results)
+    topology_ok = all(r.topology_preserved for r in replica_results)
+    converged_ok = all(r.gau_loose_converged for r in replica_results)
+
+    # Representative per_endpoint: first replica (diagnostic only).
+    per_endpoint = list(replica_results[0].per_endpoint)
+
+    rank_key = (
+        0 if hard else 1,
+        mean_f,
+        med_steps,
+        med_rmsd,
+        candidate.run_id,
+        candidate.seed,
+        candidate.epoch,
+        candidate.checkpoint_id,
+    )
+    return CandidateScreenResult(
+        candidate=candidate,
+        per_endpoint=per_endpoint,
+        identity_ok=identity_ok,
+        topology_preserved=topology_ok,
+        gau_loose_converged=converged_ok,
+        hard_gates_passed=hard,
+        mean_rmsd_to_reference_angstrom=med_rmsd,
+        mean_aimnet2_steps_to_gau_loose=med_steps,
+        mean_force_rmse_at_reference_ev_per_a=mean_f,
+        rank_key=rank_key,
+        replicas=n,
+        replica_epsilon_angstrom=float(replica_epsilon_angstrom),
+        basin_gap_angstrom=float(basin_gap_angstrom),
+        modal_basin_fraction=float(basin["modal_basin_fraction"]),
+        basin_count=int(basin["basin_count"]),
+        deterministic=bool(basin["deterministic"]),
+        rmsd_p10=_percentile_sorted(s_rmsd, 0.10) if s_rmsd else math.inf,
+        rmsd_p90=_percentile_sorted(s_rmsd, 0.90) if s_rmsd else math.inf,
+        steps_min=float(s_steps[0]) if s_steps else math.inf,
+        steps_max=float(s_steps[-1]) if s_steps else math.inf,
+        basin_clusters=list(basin["basin_clusters"]),
+        replica_mean_rmsds=list(rmsds),
+        replica_mean_steps=list(steps),
+    )
+
+
 def screen_checkpoint(
     engine: GauLooseEngine,
     candidate: CheckpointCandidate,
@@ -623,6 +859,59 @@ def screen_checkpoint(
         for ref in references
     ]
     return aggregate_candidate(candidate, per)
+
+
+def screen_checkpoint_replicas(
+    engine: GauLooseEngine,
+    candidate: CheckpointCandidate,
+    references: Sequence[TeacherEndpointReference],
+    *,
+    replicas: int = DEFAULT_REPLICAS,
+    replica_epsilon_angstrom: float = DEFAULT_REPLICA_EPSILON_ANGSTROM,
+    basin_gap_angstrom: float = DEFAULT_BASIN_GAP_ANGSTROM,
+    base_rng_seed: int = 0,
+) -> CandidateScreenResult:
+    """Single-shot (replicas=1) or multi-start statistical pre-screen.
+
+    When ``replicas == 1`` this is exactly :func:`screen_checkpoint` (no
+    perturbation). When ``replicas > 1``, start geometries are perturbed with
+    :func:`~nhc_deprot.pipeline.basin_perturbation.perturb_start_geometry` and
+    metrics are aggregated by :func:`aggregate_replica_results`.
+    """
+
+    n = int(replicas)
+    if n < 1:
+        raise PreScreenError(f"replicas must be >= 1, got {n}")
+    if n == 1:
+        return screen_checkpoint(engine, candidate, references)
+
+    from nhc_deprot.pipeline.basin_perturbation import perturb_start_geometry
+
+    eps = float(replica_epsilon_angstrom)
+    if eps < 0.0:
+        raise PreScreenError(f"replica_epsilon_angstrom must be >= 0, got {eps}")
+
+    replica_results: list[CandidateScreenResult] = []
+    for i in range(n):
+        seed_i = replica_rng_seed(
+            candidate, replica_index=i, base_seed=base_rng_seed
+        )
+        pert_refs: list[TeacherEndpointReference] = []
+        for j, ref in enumerate(references):
+            pr = perturb_start_geometry(
+                ref,
+                epsilon_angstrom=eps,
+                rng_seed=seed_i + (j + 1) * 10_007,
+            )
+            pert_refs.append(pr.reference)
+        replica_results.append(screen_checkpoint(engine, candidate, pert_refs))
+
+    return aggregate_replica_results(
+        candidate,
+        replica_results,
+        replica_epsilon_angstrom=eps,
+        basin_gap_angstrom=float(basin_gap_angstrom),
+    )
 
 
 def _normalize_candidate(raw: Mapping[str, Any] | CheckpointCandidate) -> CheckpointCandidate:
@@ -662,11 +951,20 @@ def run_pre_screen_campaign(
     shortlist_count: int = DEFAULT_SHORTLIST_COUNT,
     write: bool = True,
     output_dir: Path | None = None,
+    replicas: int = DEFAULT_REPLICAS,
+    replica_epsilon_angstrom: float = DEFAULT_REPLICA_EPSILON_ANGSTROM,
+    basin_gap_angstrom: float = DEFAULT_BASIN_GAP_ANGSTROM,
+    replica_base_rng_seed: int = 0,
 ) -> dict[str, Any]:
     """Screen candidates with zero DFT; write campaign receipt.
 
     Ranking is fixed: hard gates → force RMSE ↑ → steps ↑ → RMSD ↑.
     Energy loss is never used. See T9_OPERATIONAL §3 for why force leads.
+
+    ``replicas`` (default 1): when >1, each candidate is screened from N
+    perturbed starts; steps/RMSD ranking values are **medians**; force is
+    single-shot at the reference geometry (asserted identical across
+    replicas). Basin statistics are reported but do not enter ``rank_key``.
     """
 
     if not candidates:
@@ -675,13 +973,26 @@ def run_pre_screen_campaign(
         raise PreScreenError("references must be non-empty")
     if engine is None and engine_factory is None:
         raise PreScreenError("engine or engine_factory required")
+    n_rep = int(replicas)
+    if n_rep < 1:
+        raise PreScreenError(f"replicas must be >= 1, got {n_rep}")
 
     cand_list = [_normalize_candidate(c) for c in candidates]
     results: list[CandidateScreenResult] = []
     for cand in cand_list:
         eng = engine_factory(cand) if engine_factory is not None else engine
         assert eng is not None
-        results.append(screen_checkpoint(eng, cand, references))
+        results.append(
+            screen_checkpoint_replicas(
+                eng,
+                cand,
+                references,
+                replicas=n_rep,
+                replica_epsilon_angstrom=float(replica_epsilon_angstrom),
+                basin_gap_angstrom=float(basin_gap_angstrom),
+                base_rng_seed=int(replica_base_rng_seed),
+            )
+        )
 
     ranked = rank_candidates(results)
     shortlist_n = max(0, int(shortlist_count))
@@ -709,6 +1020,28 @@ def run_pre_screen_campaign(
     if out_dir is None and layout is not None:
         out_dir = layout.pre_screen_batch_dir(batch_id) / sid
 
+    ranking_rule = (
+        "hard_gates_all_pass -> mean_force_rmse_asc -> mean_steps_asc "
+        "-> mean_rmsd_asc"
+    )
+    if n_rep > 1:
+        ranking_rule = (
+            "hard_gates_all_pass -> mean_force_rmse_asc "
+            "-> median_replica_steps_asc -> median_replica_rmsd_asc"
+        )
+
+    notes = [
+        "zero-DFT AIMNet2 GAU_LOOSE pre-screen only",
+        "not final model selection (mindmap steps 8–9 still required)",
+        "frame-level energy loss is forbidden for ranking",
+    ]
+    if n_rep > 1:
+        notes.append(
+            f"replica measurement: N={n_rep} "
+            f"epsilon={float(replica_epsilon_angstrom):g} Å; "
+            "rank uses median steps/RMSD; modal_basin_fraction reported only"
+        )
+
     campaign: dict[str, Any] = {
         "schema": CAMPAIGN_SCHEMA,
         "mindmap_step": MINDMAP_STEP,
@@ -719,10 +1052,12 @@ def run_pre_screen_campaign(
         "selection_authority": SELECTION_AUTHORITY,
         "scientific_validation_required_before_final_selection": True,
         "energy_loss_used_for_ranking": False,
-        "ranking_rule": (
-            "hard_gates_all_pass -> mean_force_rmse_asc -> mean_steps_asc "
-            "-> mean_rmsd_asc"
+        "ranking_rule": ranking_rule,
+        "replicas": n_rep,
+        "replica_epsilon_angstrom": (
+            float(replica_epsilon_angstrom) if n_rep > 1 else None
         ),
+        "basin_gap_angstrom": float(basin_gap_angstrom) if n_rep > 1 else None,
         "shortlist_count_requested": shortlist_n,
         "candidate_count": len(ranked),
         "hard_gates_passed_count": sum(1 for r in ranked if r.hard_gates_passed),
@@ -741,11 +1076,7 @@ def run_pre_screen_campaign(
         "ranked": [r.as_dict() for r in ranked],
         "shortlist": [r.as_dict() for r in shortlist],
         "shortlist_checkpoint_ids": [r.candidate.checkpoint_id for r in shortlist],
-        "notes": [
-            "zero-DFT AIMNet2 GAU_LOOSE pre-screen only",
-            "not final model selection (mindmap steps 8–9 still required)",
-            "frame-level energy loss is forbidden for ranking",
-        ],
+        "notes": notes,
     }
 
     if write and out_dir is not None:

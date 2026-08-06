@@ -453,6 +453,9 @@ def run_pre_screen_cli(
     device: str | None = None,
     max_steps: int | None = None,
     teacher_batch_dir: Path | None = None,
+    replicas: int = 1,
+    replica_epsilon_angstrom: float = 1e-4,
+    basin_gap_angstrom: float = 0.01,
 ) -> dict[str, Any]:
     """Wire candidates + refs + engine into :func:`run_pre_screen_campaign`.
 
@@ -468,6 +471,18 @@ def run_pre_screen_cli(
     if sid is None:
         sid = run_ids[0] if len(run_ids) == 1 else "campaign"
 
+    common = dict(
+        candidates=list(candidates),
+        layout=layout,
+        batch_id=batch_id,
+        screen_id=sid,
+        shortlist_count=shortlist_count,
+        write=write,
+        replicas=int(replicas),
+        replica_epsilon_angstrom=float(replica_epsilon_angstrom),
+        basin_gap_angstrom=float(basin_gap_angstrom),
+    )
+
     if dry_run:
         refs = resolve_references(
             layout,
@@ -476,14 +491,9 @@ def run_pre_screen_cli(
             allow_synthetic=True,
         )
         return run_pre_screen_campaign(
-            candidates=list(candidates),
             references=refs,
             engine=SimulatedPreScreenEngine(),
-            layout=layout,
-            batch_id=batch_id,
-            screen_id=sid,
-            shortlist_count=shortlist_count,
-            write=write,
+            **common,
         )
 
     # Live: fail closed on missing weights before touching teacher refs / AIMNet2.
@@ -511,14 +521,9 @@ def run_pre_screen_cli(
     except LivePreScreenEngineError as exc:
         raise PreScreenCliError(str(exc)) from exc
     return run_pre_screen_campaign(
-        candidates=list(candidates),
         references=refs,
         engine_factory=factory,
-        layout=layout,
-        batch_id=batch_id,
-        screen_id=sid,
-        shortlist_count=shortlist_count,
-        write=write,
+        **common,
     )
 
 
@@ -620,6 +625,29 @@ def build_pre_screen_parser() -> argparse.ArgumentParser:
         default=True,
         help="Write screen_campaign.json under pre_screen_g00N/",
     )
+    p.add_argument(
+        "--replicas",
+        type=int,
+        default=1,
+        help=(
+            "Number of start-geometry replicas per candidate (default 1 = "
+            "legacy single-shot). N>1 uses median steps/RMSD + basin stats."
+        ),
+    )
+    p.add_argument(
+        "--replica-epsilon",
+        type=float,
+        default=1e-4,
+        dest="replica_epsilon",
+        help="RMS start-atom displacement (Å) when --replicas > 1 (default 1e-4)",
+    )
+    p.add_argument(
+        "--basin-gap",
+        type=float,
+        default=0.01,
+        dest="basin_gap",
+        help="Adjacent-gap (Å) for RMSD basin clustering (default 0.01)",
+    )
     return p
 
 
@@ -693,6 +721,9 @@ def main_pre_screen(
             device=args.device,
             max_steps=args.max_steps,
             teacher_batch_dir=args.teacher_batch_dir,
+            replicas=int(args.replicas),
+            replica_epsilon_angstrom=float(args.replica_epsilon),
+            basin_gap_angstrom=float(args.basin_gap),
         )
     except Exception as exc:  # noqa: BLE001
         print(

@@ -179,6 +179,38 @@ basin 归属由 AIMNet2 从**起始几何**出发的 LBFGS 弛豫决定，参考
 
 **若将来要把 RMSD 收回作可用指标**，路径已明确且便宜（单复本约 12 s）：对每个候选跑 N 个扰动复本，报 **p(basin) 或多数簇**，而不是单次距离值。这条**需要人拍板**（改的是预筛的测量口径），本文不擅自执行。
 
+**2026-08-06 已落地：复本化测量（测量定义变了，排序键顺序未变）**  
+任务：`docs/plans/20260806_grok_task_replica_rmsd_measurement.md`。
+
+| 项 | 默认 / 本次 live |
+| --- | --- |
+| `replicas` | 默认 **1**（与旧路径 bit-compatible）；live `replica_seed730_v1` 用 **N=8** |
+| `replica_epsilon_angstrom` | **1e−4**（扰动平台区；不改变化学） |
+| `basin_gap_angstrom` | **0.01** |
+| 排序键顺序 | 仍 `hard → force RMSE ↑ → steps ↑ → rmsd ↑`（**未改**） |
+| steps / RMSD 取值 | N>1 时用复本**中位数**（双峰时均值会落在空档） |
+| force RMSE | 仍单点参考几何；N 复本 **assert spread==0**（fail closed） |
+| basin 统计 | `modal_basin_fraction` / `basin_count` / `deterministic` **只报告、不进 rank_key** |
+| 合同 | **未改**任何 `docs/contracts/*` |
+
+代码：`pre_screen.screen_checkpoint_replicas` / `aggregate_replica_results`；CLI `--replicas` / `--replica-epsilon` / `--basin-gap`。
+
+**live 验证**（seed730 全 epoch 轴 48 候选，m250 Val 参考，CPU，`screen_id=replica_seed730_v1`）：
+
+| 指标 | 值 |
+| --- | ---: |
+| 墙钟 | **~58 min**（00:17→01:15 CST；384 次弛豫） |
+| force spread 断言 | **未触发** |
+| `deterministic`（frac==1） | **42 / 48** |
+| frac ∈ [0.3, 0.7]（近抛硬币） | **1 / 48**（`e1f1_mlp` ep10，frac=0.625） |
+| 非确定共 | **6 / 48**（最低 frac 0.625；其余 0.75–0.875） |
+| 同 run 内「中位数序 vs 第 1 复本序」 | **48/48 位次相同**（本批 48 个 force 值互异，主序已被 force 锁死） |
+| ep10 平均 modal_frac | **0.81**（4 配方）；ep≥20 多数为 1.0 |
+
+短名单 top3 含 2 个非确定候选（`e1f100_mlp_shift` ep10 frac=0.75；`e1f1_mlp_shift` ep10 frac=0.875）——**不惩罚进序**，但收据上可见。
+
+**明确**：这改变了「一次预筛测量」在 `replicas>1` 时的定义（统计量 vs 单次抽样）；**未改**排序键顺序、**未改**合同数值；默认 `replicas=1` 保持历史单次路径。
+
 ### 3.2 连带订正
 
 此前「seed 方差 >> 配方方差、前 9 名全是 seed 730」的读数，实为 **basin 归属分层**，不是平滑的配方效应。`live_phase1_v002` 的 RMSD 排名约 1/4 是设备相关的。
