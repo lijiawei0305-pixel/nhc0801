@@ -211,6 +211,32 @@ basin 归属由 AIMNet2 从**起始几何**出发的 LBFGS 弛豫决定，参考
 
 **明确**：这改变了「一次预筛测量」在 `replicas>1` 时的定义（统计量 vs 单次抽样）；**未改**排序键顺序、**未改**合同数值；默认 `replicas=1` 保持历史单次路径。
 
+**2026-08-06 force 容差带（排序键顺序仍不变，默认关闭）**  
+任务：`docs/plans/20260806_grok_task_force_tolerance_band.md`。
+
+问题：48 个 force **全部互异** → 严格比较下 steps/rmsd/`modal_basin_fraction` 是死键；相邻最小 ΔF=**9.28e−07**，而跨设备 force 中位偏移 **1.4e−3**（§3.1 表，n=16）——约 **45%** 相邻对间距 < 中位偏移。
+
+| 项 | 设计 |
+| --- | --- |
+| 分档 | **贪心链式聚簇**（按 force 排序后相邻 ΔF < tol 并档）；非量化桶（避免桶边界把 1e−9 差拆开） |
+| 链传递缺陷 | A~B、B~C 可使 \|A−C\|≥tol 仍同档；本数据 tol=1.4e−3 时最大档 **8** 人 |
+| 档内次序 | `modal_basin_fraction` **↓**（仅 replicas>1 有值；replicas=1 跳过）→ steps ↑ → rmsd ↑ → 稳定 tiebreak |
+| 默认 | `force_tolerance=0`（= 严格 force，与旧路径一致） |
+| 建议 live | **1.4e−3**（中位跨设备偏移；偏保守细档） |
+| 合同 | **未进** `NUMERIC_CALIBRATION`（默认关；人拍板是否固化） |
+| CLI | `--force-tolerance` |
+
+对 `replica_seed730_v1` **只读重排**（不覆盖收据，tol=1.4e−3）：
+
+| 问 | 结果 |
+| --- | --- |
+| 前 3 名 | **未变**（1–2 已同档且 frac 1.0>0.75，次序本就与 fraction 一致） |
+| 档数 | hard-pass **27** 档；档大小：14×2 + 12×1 + 1×8 |
+| 成对次序翻转 | **9 / 1128** |
+| 短名单非确定 | 仍 **2/3**（top3 未变） |
+
+**明确**：**排序键优先级顺序未改**（仍 hard→force→…）；**合同数值未改**；**默认 tolerance=0 关闭**。打开后才让 fraction/steps 在 force 噪声带内起作用。
+
 ### 3.2 连带订正
 
 此前「seed 方差 >> 配方方差、前 9 名全是 seed 730」的读数，实为 **basin 归属分层**，不是平滑的配方效应。`live_phase1_v002` 的 RMSD 排名约 1/4 是设备相关的。

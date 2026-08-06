@@ -43,6 +43,10 @@ DEFAULT_REPLICAS: Final = 1
 DEFAULT_REPLICA_EPSILON_ANGSTROM: Final = 1e-4
 DEFAULT_BASIN_GAP_ANGSTROM: Final = 0.01
 FORCE_REPLICA_SPREAD_TOL: Final = 1e-12
+# Force RMSE ranking tolerance (Å units of eV/Å RMSE). Default 0 = strict
+# comparison (legacy). Suggested live value ~1.4e-3 = median CUDA→CPU force
+# offset (T9 §3.1); not a contract constant — off by default.
+DEFAULT_FORCE_TOLERANCE: Final = 0.0
 
 # What a screened weight *is*. The epoch-zero official base weight is the
 # yardstick required by NUMERIC_CALIBRATION_V001.epoch_zero_non_regression_rule,
@@ -637,12 +641,123 @@ def aggregate_candidate(
     )
 
 
+def assign_force_bands(
+    results: Sequence[CandidateScreenResult],
+    *,
+    force_tolerance: float,
+) -> dict[str, int]:
+    """Assign force-band ids via greedy chain clustering (order-independent).
+
+    Within each hard-gate status group, sort by force ↑ then stable tiebreak,
+    then merge adjacent candidates when ``Δforce < force_tolerance`` into the
+    same band. Band ids are increasing with force (lower force → lower id).
+
+    **Chain transfer:** if A~B and B~C under the tolerance, A and C share a
+    band even when ``|F_A - F_C| >= tolerance``. That is intentional for a
+    simple total order; see T9 force-tolerance note.
+
+    Returns mapping ``checkpoint_id → band_id`` (global over the input list).
+    """
+
+    tol = float(force_tolerance)
+    if tol < 0.0:
+        raise PreScreenError(f"force_tolerance must be >= 0, got {tol}")
+
+    # Partition by hard status so fail-closed candidates never share bands
+    # with passers in a way that could reorder hard before soft keys oddly.
+    by_hard: dict[int, list[CandidateScreenResult]] = {0: [], 1: []}
+    for r in results:
+        by_hard[0 if r.hard_gates_passed else 1].append(r)
+
+    band_of: dict[str, int] = {}
+    next_band = 0
+    for hard_flag in (0, 1):
+        group = by_hard[hard_flag]
+        if not group:
+            continue
+        ordered = sorted(
+            group,
+            key=lambda r: (
+                float(r.mean_force_rmse_at_reference_ev_per_a),
+                r.candidate.run_id,
+                r.candidate.seed,
+                r.candidate.epoch,
+                r.candidate.checkpoint_id,
+            ),
+        )
+        if tol == 0.0:
+            # Each candidate its own band in force order (strict).
+            for r in ordered:
+                band_of[r.candidate.checkpoint_id] = next_band
+                next_band += 1
+            continue
+
+        band_start_force = float(ordered[0].mean_force_rmse_at_reference_ev_per_a)
+        # Greedy chain: extend current band while adjacent gap < tol
+        # (compare to previous member, not band start — true chain clustering)
+        prev_f = band_start_force
+        band_of[ordered[0].candidate.checkpoint_id] = next_band
+        for r in ordered[1:]:
+            f = float(r.mean_force_rmse_at_reference_ev_per_a)
+            if f - prev_f >= tol:
+                next_band += 1
+            band_of[r.candidate.checkpoint_id] = next_band
+            prev_f = f
+        next_band += 1
+
+    return band_of
+
+
+def _rank_sort_key_with_bands(
+    r: CandidateScreenResult,
+    *,
+    band_of: Mapping[str, int],
+) -> tuple[Any, ...]:
+    """hard → force_band → (−modal_frac) → steps → rmsd → tiebreak."""
+
+    hard = 0 if r.hard_gates_passed else 1
+    band = int(band_of[r.candidate.checkpoint_id])
+    frac = r.modal_basin_fraction
+    # Missing fraction (replicas==1): treat as tie on this component (0.0).
+    frac_key = -float(frac) if frac is not None else 0.0
+    return (
+        hard,
+        band,
+        frac_key,
+        float(r.mean_aimnet2_steps_to_gau_loose),
+        float(r.mean_rmsd_to_reference_angstrom),
+        r.candidate.run_id,
+        r.candidate.seed,
+        r.candidate.epoch,
+        r.candidate.checkpoint_id,
+    )
+
+
 def rank_candidates(
     results: Sequence[CandidateScreenResult],
+    *,
+    force_tolerance: float = DEFAULT_FORCE_TOLERANCE,
 ) -> list[CandidateScreenResult]:
-    """Hard gates → force RMSE ↑ → steps ↑ → RMSD ↑. Never energy loss."""
+    """Hard gates → force (optionally banded) → … → RMSD. Never energy loss.
 
-    return sorted(results, key=lambda r: r.rank_key)
+    ``force_tolerance == 0`` (default): strict force ↑ then steps ↑ then rmsd ↑
+    using each result's stored ``rank_key`` (legacy path).
+
+    ``force_tolerance > 0``: greedy force bands (Δ < tol → same band), then
+    within band ``modal_basin_fraction`` ↓ (if present), then steps ↑, rmsd ↑.
+    """
+
+    tol = float(force_tolerance)
+    if tol < 0.0:
+        raise PreScreenError(f"force_tolerance must be >= 0, got {tol}")
+    if tol == 0.0:
+        return sorted(results, key=lambda r: r.rank_key)
+
+    band_of = assign_force_bands(results, force_tolerance=tol)
+    return sorted(
+        results,
+        key=lambda r: _rank_sort_key_with_bands(r, band_of=band_of),
+    )
 
 
 def _percentile_sorted(sorted_vals: Sequence[float], q: float) -> float:
@@ -955,6 +1070,7 @@ def run_pre_screen_campaign(
     replica_epsilon_angstrom: float = DEFAULT_REPLICA_EPSILON_ANGSTROM,
     basin_gap_angstrom: float = DEFAULT_BASIN_GAP_ANGSTROM,
     replica_base_rng_seed: int = 0,
+    force_tolerance: float = DEFAULT_FORCE_TOLERANCE,
 ) -> dict[str, Any]:
     """Screen candidates with zero DFT; write campaign receipt.
 
@@ -964,7 +1080,11 @@ def run_pre_screen_campaign(
     ``replicas`` (default 1): when >1, each candidate is screened from N
     perturbed starts; steps/RMSD ranking values are **medians**; force is
     single-shot at the reference geometry (asserted identical across
-    replicas). Basin statistics are reported but do not enter ``rank_key``.
+    replicas). Basin statistics are reported; with
+    ``force_tolerance > 0`` they also break ties inside a force band.
+
+    ``force_tolerance`` (default 0): when >0, forces within tolerance share a
+    band and ``modal_basin_fraction`` (if present) ranks before steps/rmsd.
     """
 
     if not candidates:
@@ -976,6 +1096,9 @@ def run_pre_screen_campaign(
     n_rep = int(replicas)
     if n_rep < 1:
         raise PreScreenError(f"replicas must be >= 1, got {n_rep}")
+    ftol = float(force_tolerance)
+    if ftol < 0.0:
+        raise PreScreenError(f"force_tolerance must be >= 0, got {ftol}")
 
     cand_list = [_normalize_candidate(c) for c in candidates]
     results: list[CandidateScreenResult] = []
@@ -994,7 +1117,7 @@ def run_pre_screen_campaign(
             )
         )
 
-    ranked = rank_candidates(results)
+    ranked = rank_candidates(results, force_tolerance=ftol)
     shortlist_n = max(0, int(shortlist_count))
     # epoch-zero is the baseline the contract compares against, not a candidate:
     # it stays in `ranked` but must not displace a fine-tuned checkpoint from the
@@ -1020,14 +1143,27 @@ def run_pre_screen_campaign(
     if out_dir is None and layout is not None:
         out_dir = layout.pre_screen_batch_dir(batch_id) / sid
 
-    ranking_rule = (
-        "hard_gates_all_pass -> mean_force_rmse_asc -> mean_steps_asc "
-        "-> mean_rmsd_asc"
-    )
-    if n_rep > 1:
+    if ftol > 0.0:
+        steps_token = (
+            "median_replica_steps_asc" if n_rep > 1 else "mean_steps_asc"
+        )
+        rmsd_token = (
+            "median_replica_rmsd_asc" if n_rep > 1 else "mean_rmsd_asc"
+        )
+        ranking_rule = (
+            "hard_gates_all_pass -> force_band_asc "
+            f"(tol={ftol:g}) -> modal_basin_fraction_desc -> "
+            f"{steps_token} -> {rmsd_token}"
+        )
+    elif n_rep > 1:
         ranking_rule = (
             "hard_gates_all_pass -> mean_force_rmse_asc "
             "-> median_replica_steps_asc -> median_replica_rmsd_asc"
+        )
+    else:
+        ranking_rule = (
+            "hard_gates_all_pass -> mean_force_rmse_asc -> mean_steps_asc "
+            "-> mean_rmsd_asc"
         )
 
     notes = [
@@ -1039,7 +1175,17 @@ def run_pre_screen_campaign(
         notes.append(
             f"replica measurement: N={n_rep} "
             f"epsilon={float(replica_epsilon_angstrom):g} Å; "
-            "rank uses median steps/RMSD; modal_basin_fraction reported only"
+            "rank uses median steps/RMSD"
+            + (
+                "; modal_basin_fraction breaks force-band ties"
+                if ftol > 0.0
+                else "; modal_basin_fraction reported only"
+            )
+        )
+    if ftol > 0.0:
+        notes.append(
+            f"force_tolerance={ftol:g}: greedy force bands; "
+            "within band modal_basin_fraction desc then steps then rmsd"
         )
 
     campaign: dict[str, Any] = {
@@ -1053,6 +1199,7 @@ def run_pre_screen_campaign(
         "scientific_validation_required_before_final_selection": True,
         "energy_loss_used_for_ranking": False,
         "ranking_rule": ranking_rule,
+        "force_tolerance": ftol,
         "replicas": n_rep,
         "replica_epsilon_angstrom": (
             float(replica_epsilon_angstrom) if n_rep > 1 else None

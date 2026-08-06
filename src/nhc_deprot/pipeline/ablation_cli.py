@@ -456,6 +456,7 @@ def run_pre_screen_cli(
     replicas: int = 1,
     replica_epsilon_angstrom: float = 1e-4,
     basin_gap_angstrom: float = 0.01,
+    force_tolerance: float = 0.0,
 ) -> dict[str, Any]:
     """Wire candidates + refs + engine into :func:`run_pre_screen_campaign`.
 
@@ -471,17 +472,11 @@ def run_pre_screen_cli(
     if sid is None:
         sid = run_ids[0] if len(run_ids) == 1 else "campaign"
 
-    common = dict(
-        candidates=list(candidates),
-        layout=layout,
-        batch_id=batch_id,
-        screen_id=sid,
-        shortlist_count=shortlist_count,
-        write=write,
-        replicas=int(replicas),
-        replica_epsilon_angstrom=float(replica_epsilon_angstrom),
-        basin_gap_angstrom=float(basin_gap_angstrom),
-    )
+    cand_list = list(candidates)
+    n_rep = int(replicas)
+    eps = float(replica_epsilon_angstrom)
+    gap = float(basin_gap_angstrom)
+    ftol = float(force_tolerance)
 
     if dry_run:
         refs = resolve_references(
@@ -491,9 +486,18 @@ def run_pre_screen_cli(
             allow_synthetic=True,
         )
         return run_pre_screen_campaign(
+            candidates=cand_list,
             references=refs,
             engine=SimulatedPreScreenEngine(),
-            **common,
+            layout=layout,
+            batch_id=batch_id,
+            screen_id=sid,
+            shortlist_count=shortlist_count,
+            write=write,
+            replicas=n_rep,
+            replica_epsilon_angstrom=eps,
+            basin_gap_angstrom=gap,
+            force_tolerance=ftol,
         )
 
     # Live: fail closed on missing weights before touching teacher refs / AIMNet2.
@@ -521,9 +525,18 @@ def run_pre_screen_cli(
     except LivePreScreenEngineError as exc:
         raise PreScreenCliError(str(exc)) from exc
     return run_pre_screen_campaign(
+        candidates=cand_list,
         references=refs,
         engine_factory=factory,
-        **common,
+        layout=layout,
+        batch_id=batch_id,
+        screen_id=sid,
+        shortlist_count=shortlist_count,
+        write=write,
+        replicas=n_rep,
+        replica_epsilon_angstrom=eps,
+        basin_gap_angstrom=gap,
+        force_tolerance=ftol,
     )
 
 
@@ -648,6 +661,18 @@ def build_pre_screen_parser() -> argparse.ArgumentParser:
         dest="basin_gap",
         help="Adjacent-gap (Å) for RMSD basin clustering (default 0.01)",
     )
+    p.add_argument(
+        "--force-tolerance",
+        type=float,
+        default=0.0,
+        dest="force_tolerance",
+        help=(
+            "Force RMSE band width for ranking (default 0 = strict). "
+            "When >0, candidates within tolerance share a band; "
+            "modal_basin_fraction then steps/rmsd break ties. "
+            "Suggested ~1.4e-3 (median CUDA→CPU force offset); not a contract."
+        ),
+    )
     return p
 
 
@@ -724,6 +749,7 @@ def main_pre_screen(
             replicas=int(args.replicas),
             replica_epsilon_angstrom=float(args.replica_epsilon),
             basin_gap_angstrom=float(args.basin_gap),
+            force_tolerance=float(args.force_tolerance),
         )
     except Exception as exc:  # noqa: BLE001
         print(
