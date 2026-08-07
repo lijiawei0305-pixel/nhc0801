@@ -88,6 +88,8 @@ def run_sci_val_campaign(
     parent: ParentRouteEngine | None = None,
     epoch0_baseline: CheckpointScientificValidation | None = None,
     max_candidates: int | None = None,
+    parent_max_steps: int | None = None,
+    epoch0_parent_max_steps: int | None = None,
 ) -> dict[str, Any]:
     """Run full sci-val route for each shortlisted (seed, epoch); then select."""
 
@@ -95,6 +97,20 @@ def run_sci_val_campaign(
         raise SciValCampaignError(
             "live sci-val requires scientific_validation_live=true (and real engines)"
         )
+
+    # Refuse apples-to-oranges burden: e0 and candidates must share parent max_steps.
+    e0_steps = epoch0_parent_max_steps
+    cand_steps = parent_max_steps
+    if e0_steps is None and epoch0_baseline is not None:
+        e0_steps = getattr(epoch0_baseline, "parent_max_steps", None)
+    if cand_steps is None and parent is not None:
+        cand_steps = getattr(parent, "max_steps", None)
+    if e0_steps is not None and cand_steps is not None:
+        if int(e0_steps) != int(cand_steps):
+            raise SciValCampaignError(
+                "BASELINE_CONFIG_MISMATCH: parent_max_steps "
+                f"epoch0={int(e0_steps)} vs candidates={int(cand_steps)}"
+            )
 
     if candidates is None:
         sl = shortlist_path or (layout.sci_val_dir / "shortlist_campaign.json")
@@ -220,12 +236,19 @@ def run_sci_val_campaign(
     validate_numeric_addendum(addendum)
     selection = select_after_scientific_validation(val_objects, numeric_addendum=addendum)
 
+    resolved_parent_max_steps = cand_steps if cand_steps is not None else e0_steps
     campaign = {
         "schema": SCI_VAL_CAMPAIGN_SCHEMA,
         "mindmap_steps": list(MINDMAP_STEPS),
         "generation_id": layout.generation_id,
         "dry_run": dry_run,
         "scientific_validation_live": bool(scientific_validation_live and not dry_run),
+        "parent_max_steps": (
+            int(resolved_parent_max_steps)
+            if resolved_parent_max_steps is not None
+            else None
+        ),
+        "epoch0_parent_max_steps": int(e0_steps) if e0_steps is not None else None,
         "status": (
             "DRY_RUN_SCI_VAL_PASS"
             if dry_run

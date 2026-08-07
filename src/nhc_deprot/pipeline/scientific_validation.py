@@ -25,8 +25,10 @@ Live PySCF/AIMNet2 engines are injected by authorized server runners only.
 from __future__ import annotations
 
 import math
+import tempfile
 from collections.abc import Mapping, Sequence
 from dataclasses import asdict, dataclass, field
+from pathlib import Path
 from typing import Any, Final, Protocol, cast
 
 from nhc_deprot.contracts.forbidden_stacks import (
@@ -124,8 +126,12 @@ class ParentRouteEngine(Protocol):
         charge: int,
         multiplicity: int,
         continue_from_handoff: bool,
+        trajectory_out_path: str | None = None,
     ) -> Mapping[str, Any]:
-        """Return geometry_converged, final_sp_converged, energy_hartree, steps, scf_cycles."""
+        """Return geometry_converged, final_sp_converged, energy_hartree, steps, scf_cycles.
+
+        Optional ``trajectory_out_path`` enables real opt_steps via worker callback.
+        """
         ...
 
 
@@ -167,6 +173,8 @@ class EndpointRouteReceipt:
     parent_final_state: str | None = None
     parent_energy_hartree: float | None = None
     parent_opt_steps: int = 0
+    # Fail closed: missing / unknown measurement is treated as maxcap (unmeasured).
+    parent_opt_steps_is_maxcap: bool = True
     parent_scf_cycles: int = 0
     wall_seconds: float = 0.0
     identity_and_structure_ok: bool = False
@@ -227,9 +235,10 @@ class CheckpointScientificValidation:
     mean_signed_label_error_kcal_mol: float = math.inf
     critical_endpoint_non_regression_vs_epoch_zero: bool = False
     parent_gradient_reduction_fraction: float = 0.0
-    pyscf_geometry_work_reduction_fraction: float = 0.0
+    pyscf_geometry_work_reduction_fraction: float | None = 0.0
     cumulative_scf_cycle_reduction_fraction: float = 0.0
     end_to_end_wall_reduction_fraction: float = 0.0
+    parent_opt_steps_unmeasured: bool = False
     writer_schema: str = WRITER_SCHEMA
     single_point_only: bool = False
     live_chemistry_executed: bool = False
@@ -254,6 +263,7 @@ class CheckpointScientificValidation:
             "pyscf_geometry_work_reduction_fraction": self.pyscf_geometry_work_reduction_fraction,
             "cumulative_scf_cycle_reduction_fraction": self.cumulative_scf_cycle_reduction_fraction,
             "end_to_end_wall_reduction_fraction": self.end_to_end_wall_reduction_fraction,
+            "parent_opt_steps_unmeasured": self.parent_opt_steps_unmeasured,
             "writer_schema": self.writer_schema,
             "single_point_only": self.single_point_only,
             "live_chemistry_executed": self.live_chemistry_executed,
@@ -501,18 +511,55 @@ def run_endpoint_route(
                 f"unexpected handoff classification: {receipt.handoff_classification}"
             )
 
-    # Full parent optimization (required for all non-failed routes)
-    parent_result = parent.optimize_to_final_gau(
-        root_id=geometry.root_id,
-        endpoint=geometry.endpoint,
-        elements=handoff_elements,
-        coordinates=handoff_coords,
-        charge=charge,
-        multiplicity=mult,
-        continue_from_handoff=receipt.continue_parent_optimization
-        or route_kind == "pure_pyscf_reference",
-    )
+    # Full parent optimization (required for all non-failed routes).
+    # Pass trajectory_out_path so live workers measure real opt_steps (T5);
+    # simulated engines ignore the path and return opt_steps_is_maxcap=False.
+    traj_tmp: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            prefix="nhc0801_parent_traj_",
+            suffix=".jsonl",
+            delete=False,
+        ) as fh:
+            traj_tmp = Path(fh.name)
+        parent_result = parent.optimize_to_final_gau(
+            root_id=geometry.root_id,
+            endpoint=geometry.endpoint,
+            elements=handoff_elements,
+            coordinates=handoff_coords,
+            charge=charge,
+            multiplicity=mult,
+            continue_from_handoff=receipt.continue_parent_optimization
+            or route_kind == "pure_pyscf_reference",
+            trajectory_out_path=str(traj_tmp),
+        )
+    except TypeError as exc:
+        # Older fakes / engines without trajectory_out_path kwargs.
+        if "trajectory_out_path" not in str(exc):
+            raise
+        parent_result = parent.optimize_to_final_gau(
+            root_id=geometry.root_id,
+            endpoint=geometry.endpoint,
+            elements=handoff_elements,
+            coordinates=handoff_coords,
+            charge=charge,
+            multiplicity=mult,
+            continue_from_handoff=receipt.continue_parent_optimization
+            or route_kind == "pure_pyscf_reference",
+        )
+    finally:
+        if traj_tmp is not None:
+            try:
+                traj_tmp.unlink(missing_ok=True)
+            except OSError:
+                pass
     receipt.parent_opt_steps = int(parent_result.get("opt_steps") or 0)
+    # Default True when key absent: fail closed (legacy maxcap / unmeasured).
+    if "opt_steps_is_maxcap" in parent_result:
+        receipt.parent_opt_steps_is_maxcap = bool(parent_result.get("opt_steps_is_maxcap"))
+    else:
+        receipt.parent_opt_steps_is_maxcap = True
+        receipt.notes.append("opt_steps_is_maxcap_missing_assumed_true")
     receipt.parent_scf_cycles = int(parent_result.get("scf_cycles") or 0)
     receipt.wall_seconds += float(parent_result.get("wall_seconds") or 0.0)
     receipt.parent_geometry_converged = bool(parent_result.get("geometry_converged"))
@@ -601,6 +648,7 @@ def aggregate_checkpoint_validation(
     epoch0_mean_scf_cycles: float | None = None,
     epoch0_mean_wall: float | None = None,
     live_chemistry_executed: bool = False,
+    signed_bias_tolerance_kcal_mol: float | None = None,
 ) -> CheckpointScientificValidation:
     if type(epoch) is not int or epoch < 0:
         raise ScientificValidationError("epoch must be a non-negative int (0 = epoch-zero)")
@@ -614,6 +662,7 @@ def aggregate_checkpoint_validation(
     steps: list[float] = []
     scfs: list[float] = []
     walls: list[float] = []
+    any_maxcap = False
 
     for root in root_receipts:
         if root.catastrophic_failure:
@@ -632,6 +681,8 @@ def aggregate_checkpoint_validation(
             steps.append(float(ep.parent_opt_steps))
             scfs.append(float(ep.parent_scf_cycles))
             walls.append(float(ep.wall_seconds))
+            if ep.parent_opt_steps_is_maxcap:
+                any_maxcap = True
 
     mae = sum(abs_errors) / len(abs_errors) if abs_errors else math.inf
     max_ae = max(abs_errors) if abs_errors else math.inf
@@ -646,10 +697,25 @@ def aggregate_checkpoint_validation(
     mean_scf = sum(scfs) / len(scfs) if scfs else math.inf
     mean_wall = sum(walls) / len(walls) if walls else math.inf
 
-    # Non-regression vs epoch-0 MAE (strict: not worse). Epoch-0 self-baseline → True.
+    # Burden is only numeric when every endpoint has measured (non-maxcap) opt_steps.
+    if any_maxcap:
+        burden: float | None = None
+    else:
+        burden = reduction(epoch0_mean_parent_steps, mean_steps)
+
+    # Non-regression vs epoch-0 MAE: freeze contract uses signed_bias_tolerance_kcal_mol.
+    # Epoch-0 self-baseline → True.
+    if signed_bias_tolerance_kcal_mol is None:
+        # load_numeric_calibration values are typed as object; narrow for mypy
+        # without changing runtime (same float() path as before).
+        tol = float(
+            cast(Any, load_numeric_calibration()["signed_bias_tolerance_kcal_mol"])
+        )
+    else:
+        tol = float(signed_bias_tolerance_kcal_mol)
     non_regression = True
     if epoch0_mae is not None and math.isfinite(mae) and math.isfinite(epoch0_mae):
-        non_regression = mae <= epoch0_mae + 1e-12
+        non_regression = mae <= epoch0_mae + tol
 
     # selection_payload requires epoch > 0; store raw epoch and bump only for selection helper
     stored_epoch = epoch if epoch > 0 else 0
@@ -667,9 +733,10 @@ def aggregate_checkpoint_validation(
         mean_signed_label_error_kcal_mol=mean_signed,
         critical_endpoint_non_regression_vs_epoch_zero=non_regression,
         parent_gradient_reduction_fraction=0.0,
-        pyscf_geometry_work_reduction_fraction=reduction(epoch0_mean_parent_steps, mean_steps),
+        pyscf_geometry_work_reduction_fraction=burden,
         cumulative_scf_cycle_reduction_fraction=reduction(epoch0_mean_scf_cycles, mean_scf),
         end_to_end_wall_reduction_fraction=reduction(epoch0_mean_wall, mean_wall),
+        parent_opt_steps_unmeasured=any_maxcap,
         live_chemistry_executed=live_chemistry_executed,
         single_point_only=False,
     )
@@ -877,7 +944,9 @@ class SimulatedParentEngine:
         charge: int,
         multiplicity: int,
         continue_from_handoff: bool,
+        trajectory_out_path: str | None = None,
     ) -> Mapping[str, Any]:
+        del trajectory_out_path  # sim always reports measured opt_steps
         if not continue_from_handoff and not self.fail_scf:
             # still allow pure reference path
             pass
@@ -888,6 +957,7 @@ class SimulatedParentEngine:
                 self.energy_cation if endpoint == "cation" else self.energy_neutral
             ),
             "opt_steps": self.opt_steps,
+            "opt_steps_is_maxcap": False,
             "scf_cycles": self.scf_cycles,
             "wall_seconds": 2.0,
             "coordinates": coordinates,
