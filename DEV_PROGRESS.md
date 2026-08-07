@@ -1,55 +1,69 @@
 # NHC0801 自动化开发进度
 
-> 本文件由 **Master Agent** 独占读写。科学/算力进度在 `progress.md`，两者互不覆盖。
-> 起始 Prompt：`docs/prompt.md`。任务定义：`docs/plans/20260803_teacher_trajectory_and_finetune_v02_plan.md` §3。
+更新：2026-08-04（sci-val 仪表作废 + P0/P1）
 
-更新：2026-08-03T15:40:00Z
-当前轮次：1
+**必读**：
+- sci-val 作废与重跑：`docs/plans/20260804_scival_instrumentation_void_and_rerun_plan.md`
+- 微调定稿：`docs/plans/20260804_finetune_recipe_v1_operational.md`
+- 晨间结果：`docs/plans/20260804_morning_results.md`
+- 交接：`docs/plans/20260804_morning_handoff.md`
 
 ---
 
-## 质量门
+## 质量门（本地）
 
-| 检查 | 命令 | 最近结果 | 轮次 |
-| --- | --- | --- | ---: |
-| 单元测试 | `PYTHONPATH=src python -m pytest -q` | 92 passed, 1 skipped | 基线 |
-| 静态类型 | `mypy src tests scripts` | **30 errors / 17 files**（未配置；prompt 记 12 为旧数） | 基线 |
-| 代码规范 | `ruff check src tests scripts` | **31 errors**（28 可自动修） | 基线 |
-
-**验收定义**：三项全绿（0 error）才允许把任务标 DONE。
+| 检查 | 结果 |
+| --- | --- |
+| pytest | **206 passed**, 1 skipped |
+| mypy | （未重跑本轮） |
+| ruff | （未重跑本轮） |
 
 ---
 
 ## 任务表
 
-状态：`TODO` → `DOING` → `REVIEW`（Worker 交付，等 Master 跑门） → `DONE` / `FAILED` / `BLOCKED`
-
-| ID | 模块 | 独占文件 | 依赖 | 状态 | Worker | 轮次 | 备注 |
-| --- | --- | --- | --- | --- | --- | ---: | --- |
-| **M0** | 静态检查基线清理 | `pyproject.toml` + 存量违规文件 | — | DOING | worker-m0-r1 | 1 | 清 mypy 30 + ruff 31；配置固化 |
-| **M1** | parent worker 全轨迹 callback | `scripts/nhc0801_pyscf_parent_worker.py`, `tests/test_parent_worker_trajectory.py` | M0 | TODO | — | — | **最高优先级**，数据持续流失 |
-| **M2** | live_teacher 消费轨迹 | `src/nhc_deprot/pipeline/live_teacher.py`, `tests/test_live_teacher_trajectory.py` | M1 | TODO | — | — | 含删除冗余 `first_gradient` |
-| **M3** | teacher_runner 变长帧 | `src/nhc_deprot/pipeline/teacher_runner.py`, `tests/test_teacher_runner_variable_frames.py` | M2 | TODO | — | — | `teacher_frames.py` **不改**（legacy 只读） |
-| **M4** | d3_projection live 接线 | `src/nhc_deprot/pipeline/d3_projection.py`, `tests/test_d3_projection_live.py` | M0 | TODO | — | — | 阻塞项：新帧进不了训练集 |
-| **M5** | training/config 新旋钮 | `src/nhc_deprot/training/config.py`, `tests/test_training_config.py` | M0 | TODO | — | — | run_id / EMA / batch 8 / epochs 120 |
-| **M6** | weighted_loss 单样本修复 | `src/nhc_deprot/training/weighted_loss.py`, `tests/test_weighted_loss.py` | M0 | TODO | — | — | B1，差 3 倍 |
-| **M7** | live_aimnet2 多 regex + EMA | `src/nhc_deprot/training/live_aimnet2.py`, `tests/test_live_aimnet2_config.py` | M5, M6 | TODO | — | — | 含 B2/B3 修复 |
-| **M8** | multi_seed_trainer run 子目录 | `src/nhc_deprot/training/multi_seed_trainer.py`, `tests/test_multi_seed_trainer_runs.py` | M7, M9 | TODO | — | — | — |
-| **M9** | layout run/pre_screen 路径 | `src/nhc_deprot/generation/layout.py`, `tests/test_layout_run_dirs.py` | M0 | TODO | — | — | 旧路径保留只读 fallback |
-| **M10** | pre_screen 新模块 | `src/nhc_deprot/pipeline/pre_screen.py`, `tests/test_pre_screen.py` | M9 | TODO | — | — | 零 DFT；含 Kabsch |
-| **M11** | scripts 薄封装 | `scripts/nhc0801_train_ablation.py`, `scripts/nhc0801_pre_screen.py`, `scripts/nhc0801_ablation_table.py` | M8, M10 | TODO | — | — | 逻辑必须在 `src/` |
-| **M12** | 集成验收 | — | M1–M11 | TODO | — | — | 全量回归 + dry-run 端到端 |
-| **M13** | 部署 + P-1v live 验证 | — | M12 | TODO | — | — | 1 个 endpoint，验 `trajectory_frame_count > 2` |
-| **M14** | P1 live 消融 + 预筛 | — | M13 | TODO | — | — | 4 run × 3 seed；`aimnet2_train_authorized` 已开 |
-
-**并行组**（依赖满足后可同轮派发）：
-`{M1, M4, M5, M6, M9}` → `{M2, M7, M10}` → `{M3, M8}` → `{M11}` → `M12` → `M13` → `M14`
+| ID | 状态 | 证据 |
+| --- | --- | --- |
+| M0–M12 | **DONE** | commits `455c51f`…`7cbabb4` |
+| M13 | **DONE** | P-1v：frame_count=13，E_delta=0，legacy 2 帧可读 |
+| M14 | **DONE** | LIVE_ABLATION_PASS；4 run × 144 `.pt`；log `m14_ablation_v2.out` |
+| M14fix-pt | **DONE** | `3133350` 修复 live 写 `.pt` |
+| P5.5 live 引擎 | **DONE** | `f5c0226`；live 预筛已跑 |
+| live 预筛 e1f100 | **DONE** | `PRE_SCREEN_EMPTY_SHORTLIST`（neutral 全未 GAU_LOOSE） |
+| Epoch-0 g001 | **BLOCKED** | Val neutral 官方 AIMNet2 亦未收敛 |
+| 阶段二 300–500 root | **NOT YET** | 现 ~176 root；等全轨迹+扩标签 |
 
 ---
 
-## 变更记录
+## Live 关键数字
 
-| 轮次 | 时间 | 事件 |
-| ---: | --- | --- |
-| 0 | 2026-08-03T15:20:00Z | 初始化。基线：pytest 92 passed / mypy 12 err / ruff 31 err |
-| 1 | 2026-08-03T15:40:00Z | Master 开工。实测基线 mypy **30**/17（非 prompt 的 12）。派 Worker M0 |
+| 项 | 值 |
+| --- | --- |
+| P-1v frame_count | 13 |
+| P-1v traj lines | 12 |
+| P-1v 墙钟 | ~52 min |
+| M14 F_mse @f100 | ~0.34 |
+| M14 F_mse @f1 | ~0.40 |
+| 旧 pilot F 改善 | 仅 3.4%（0.42→0.406） |
+
+---
+
+## 配方结论（T1–T9）
+
+1. **forces_weight=100** 方向正确（力误差相对 f1 明显下降）  
+2. 禁止 forces_weight=10 当默认  
+3. 禁止 energy loss 选模  
+4. pilot 3 root 仍可能 sci-val 无增益 → T9  
+5. 下一优先：真 GAU_LOOSE 预筛 + teacher 出量  
+
+---
+
+## 变更记录（节选）
+
+| 时间 | 事件 |
+| --- | --- |
+| 08-03 | M0–M12 代码全绿 |
+| 08-04 00:xx | P-1v 启动（gpu4pyscf） |
+| 08-04 | M14 v1 meta-only 失败 → 修 export → v2 重跑 |
+| 08-04 | P-1v PASS；M14 LIVE_ABLATION_PASS；定稿+结果文档 |
+| 08-04 | sci-val 收据 void（仪表 bug）；P0 e0 预筛 rank 8/49；P1 仪表/容差/失败关闭 + 5 tests |

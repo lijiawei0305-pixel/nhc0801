@@ -117,8 +117,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--epoch0-max-steps",
         type=int,
-        default=100,
-        help="Parent geometric maxsteps per endpoint",
+        default=250,
+        help="Parent geometric maxsteps per endpoint (default 250)",
     )
     args = parser.parse_args(argv)
 
