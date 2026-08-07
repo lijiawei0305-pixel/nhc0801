@@ -17,10 +17,10 @@ from typing import Any, Final, cast
 from nhc_deprot.data.errors import DatasetError
 from nhc_deprot.data.io_util import load_json_object, sha256_bytes
 from nhc_deprot.data.paths import (
-    SEALED_FINAL_TEST_COMMITMENT_SHA256,
-    SEALED_FINAL_TEST_ROOT_COUNT,
-    TRAIN_ROOTS,
-    VALIDATION_ROOTS,
+    LEGACY_PILOT_SEALED_FINAL_TEST_COMMITMENT_SHA256,
+    LEGACY_PILOT_SEALED_FINAL_TEST_ROOT_COUNT,
+    LEGACY_PILOT_TRAIN_ROOTS,
+    LEGACY_PILOT_VALIDATION_ROOTS,
 )
 
 # V004 day1 frozen schema id (evidence binding; not a science free variable)
@@ -159,13 +159,20 @@ def load_development_split(
     result.assert_disjoint()
 
     if require_v004_pilot_roots:
-        if tuple(result.train_roots) != TRAIN_ROOTS:
+        # Always compare to legacy pilot 3+2, not the active resplit TRAIN_ROOTS.
+        if tuple(result.train_roots) != LEGACY_PILOT_TRAIN_ROOTS:
             raise DatasetError("V004 pilot train roots mismatch")
-        if tuple(result.validation_roots) != VALIDATION_ROOTS:
+        if tuple(result.validation_roots) != LEGACY_PILOT_VALIDATION_ROOTS:
             raise DatasetError("V004 pilot validation roots mismatch")
-        if result.sealed_final_test.sha256 != SEALED_FINAL_TEST_COMMITMENT_SHA256:
+        if (
+            result.sealed_final_test.sha256
+            != LEGACY_PILOT_SEALED_FINAL_TEST_COMMITMENT_SHA256
+        ):
             raise DatasetError("V004 sealed Final Test commitment SHA256 mismatch")
-        if result.sealed_final_test.root_count != SEALED_FINAL_TEST_ROOT_COUNT:
+        if (
+            result.sealed_final_test.root_count
+            != LEGACY_PILOT_SEALED_FINAL_TEST_ROOT_COUNT
+        ):
             raise DatasetError("V004 sealed Final Test root_count mismatch")
 
     return result

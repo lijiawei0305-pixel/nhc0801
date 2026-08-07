@@ -19,7 +19,7 @@ GENERATION_RUNS_RELATIVE: Final = Path("runs") / DEFAULT_GENERATION_ID
 # ---------------------------------------------------------------------------
 # LEGACY READ-ONLY — V004 / phase9b shared pilot frames under $WJW/data/runs
 # Do NOT write new NHC0801 products here. New teacher frames go to
-# runs/nhc0801-g001/teacher_gpu_g00N/ (see AGENTS.md Experimental data naming).
+# runs/nhc0801-g001/teacher_gpu_g00N/ (see docs/agent/naming.md).
 # The name "autofill_*" is historical server layout, not a molecular group name.
 # ---------------------------------------------------------------------------
 LEGACY_V004_TEACHER_ROOT_TEMPLATE: Final = "autofill_{candidate_lower}_v001"
@@ -41,21 +41,58 @@ OFFICIAL_AIMNET2_WEIGHT_SHA256: Final = (
     "f0f7c054539ad3261bd36f9b11c56d12f87cb723e25bea7521755bbd3ec24e28"
 )
 
-# Sealed Final Test commitment only (no identities)
-SEALED_FINAL_TEST_COMMITMENT_SHA256: Final = (
-    "834f973954064565aa857e8d8c563d110d0f6256c99e54fc3283dc428efa6975"
-)
-SEALED_FINAL_TEST_ROOT_COUNT: Final = 2
-
-# Development roots (V004 day1) — identities are development-visible
-TRAIN_ROOTS: Final = (
+# ---------------------------------------------------------------------------
+# Legacy pilot 3+2 (pre-resplit) — packaged day1 evidence only
+# ---------------------------------------------------------------------------
+LEGACY_PILOT_TRAIN_ROOTS: Final = (
     "ACGCNTKELWXJPN-UHFFFAOYSA-N",
     "PDIYCCLDBKWBTK-UHFFFAOYSA-N",
     "VNYHGZAUUQMMDL-UHFFFAOYSA-N",
 )
-VALIDATION_ROOTS: Final = (
+LEGACY_PILOT_VALIDATION_ROOTS: Final = (
     "KZYKDQNIIMATMJ-UHFFFAOYSA-N",
     "RMEQTBVGGNKAEQ-UHFFFAOYSA-N",
+)
+LEGACY_PILOT_SEALED_FINAL_TEST_COMMITMENT_SHA256: Final = (
+    "834f973954064565aa857e8d8c563d110d0f6256c99e54fc3283dc428efa6975"
+)
+LEGACY_PILOT_SEALED_FINAL_TEST_ROOT_COUNT: Final = 2
+
+# Active development roots: TVT resplit v001 (150/16/3) if present, else pilot.
+# paths.py lives at src/nhc_deprot/data/paths.py → repo root is parents[3]
+_RESPLIT_DEV_PATH: Final = (
+    Path(__file__).resolve().parents[3]
+    / "data"
+    / "splits"
+    / "nhc0801_g001_tvt_resplit_v001_development.json"
+)
+
+
+def _active_tvt_roots() -> tuple[tuple[str, ...], tuple[str, ...], str, int]:
+    import json
+
+    if _RESPLIT_DEV_PATH.is_file():
+        payload = json.loads(_RESPLIT_DEV_PATH.read_text(encoding="utf-8"))
+        train = tuple(str(p["candidate"]) for p in payload.get("train") or [])
+        val = tuple(str(p["candidate"]) for p in payload.get("validation") or [])
+        ft = payload.get("sealed_final_test_commitment") or {}
+        if train and val:
+            return (
+                train,
+                val,
+                str(ft.get("sha256") or LEGACY_PILOT_SEALED_FINAL_TEST_COMMITMENT_SHA256),
+                int(ft.get("root_count") or LEGACY_PILOT_SEALED_FINAL_TEST_ROOT_COUNT),
+            )
+    return (
+        LEGACY_PILOT_TRAIN_ROOTS,
+        LEGACY_PILOT_VALIDATION_ROOTS,
+        LEGACY_PILOT_SEALED_FINAL_TEST_COMMITMENT_SHA256,
+        LEGACY_PILOT_SEALED_FINAL_TEST_ROOT_COUNT,
+    )
+
+
+TRAIN_ROOTS, VALIDATION_ROOTS, SEALED_FINAL_TEST_COMMITMENT_SHA256, SEALED_FINAL_TEST_ROOT_COUNT = (
+    _active_tvt_roots()
 )
 
 # Full-library xTB product (ranker local; usable as ranking pool)

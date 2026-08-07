@@ -276,20 +276,26 @@ def select_scientific_checkpoint(
         parent_gradient = _finite(
             candidate.get("parent_gradient_reduction_fraction"), label="parent gradient reduction"
         )
-        burden = _finite(
-            candidate.get("pyscf_geometry_work_reduction_fraction"),
-            label="PySCF geometry work reduction",
-        )
+        raw_burden = candidate.get("pyscf_geometry_work_reduction_fraction")
         cycles = _finite(
             candidate.get("cumulative_scf_cycle_reduction_fraction"),
             label="SCF cycle reduction",
         )
         wall = _finite(candidate.get("end_to_end_wall_reduction_fraction"), label="wall reduction")
-        if burden < burden_limit:
-            reasons.append("PYSCF_BURDEN_REDUCTION_FAILED")
+        # None / missing → unmeasured (fail closed). Never subtract config constants.
+        if raw_burden is None:
+            reasons.append("BURDEN_METRIC_UNMEASURED")
+            burden = None
+        else:
+            burden = _finite(raw_burden, label="PySCF geometry work reduction")
+            # Conservative hard gate (user 2026-08-04): stricter than freeze comment
+            # "0.0 = no hard cut; ranking key". Only when burden is measured.
+            if burden < burden_limit:
+                reasons.append("PYSCF_BURDEN_REDUCTION_FAILED")
         if reasons:
             rejected.append({"epoch": epoch, "reason_codes": reasons})
             continue
+        assert burden is not None
         key = (label_error, -parent_gradient, -burden, -cycles, -wall, float(epoch))
         eligible.append((key, candidate))
     if not eligible:

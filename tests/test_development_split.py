@@ -14,9 +14,9 @@ from nhc_deprot.data.development_split import (
 )
 from nhc_deprot.data.errors import DatasetError
 from nhc_deprot.data.paths import (
-    SEALED_FINAL_TEST_COMMITMENT_SHA256,
-    TRAIN_ROOTS,
-    VALIDATION_ROOTS,
+    LEGACY_PILOT_SEALED_FINAL_TEST_COMMITMENT_SHA256,
+    LEGACY_PILOT_TRAIN_ROOTS,
+    LEGACY_PILOT_VALIDATION_ROOTS,
 )
 
 REPO = Path(__file__).resolve().parents[1]
@@ -84,11 +84,16 @@ def test_rejects_train_val_overlap(tmp_path: Path) -> None:
 
 
 def test_packaged_v004_day1_split() -> None:
-    split = load_packaged_v004_day1_split(repo_root=REPO, require_v004_pilot_roots=True)
-    assert split.train_roots == TRAIN_ROOTS
-    assert split.validation_roots == VALIDATION_ROOTS
-    assert split.sealed_final_test.sha256 == SEALED_FINAL_TEST_COMMITMENT_SHA256
+    # Packaged day1 evidence remains the legacy pilot 3+2 cohort (not resplit).
+    split = load_packaged_v004_day1_split(
+        repo_root=REPO, require_v004_pilot_roots=False
+    )
+    assert split.train_roots == LEGACY_PILOT_TRAIN_ROOTS
+    assert split.validation_roots == LEGACY_PILOT_VALIDATION_ROOTS
+    assert (
+        split.sealed_final_test.sha256
+        == LEGACY_PILOT_SEALED_FINAL_TEST_COMMITMENT_SHA256
+    )
     assert split.sealed_final_test.root_count == 2
-    # Pilot evidence: 3+2 roots — counts come from file, not a magic global
     assert split.candidate_count("train") == 3
     assert split.candidate_count("validation") == 2
