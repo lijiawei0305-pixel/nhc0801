@@ -17,7 +17,7 @@ import re
 from collections.abc import Iterator, Mapping, MutableMapping, Sequence
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
 import numpy as np
 
@@ -296,6 +296,160 @@ def _natom_from_numbers(numbers: Any) -> Any:
 
     natom = (numbers != 0).sum(dim=-1).to(dtype=torch.float64)
     return torch.clamp(natom, min=1.0)
+
+
+RESUME_SCHEMA: Final = "nhc0801-train-resume-v1"
+
+
+def capture_rng_state(torch_mod: Any) -> dict[str, Any]:
+    """Snapshot python / numpy / torch / torch_cuda RNG for resume payloads."""
+
+    rng_state: dict[str, Any] = {
+        "python": random.getstate(),
+        "numpy": np.random.get_state(),
+        "torch": torch_mod.get_rng_state(),
+    }
+    if torch_mod.cuda.is_available():
+        try:
+            rng_state["torch_cuda"] = torch_mod.cuda.get_rng_state_all()
+        except Exception:  # noqa: BLE001
+            rng_state["torch_cuda"] = None
+    else:
+        rng_state["torch_cuda"] = None
+    return rng_state
+
+
+def restore_rng_state(torch_mod: Any, rng: Mapping[str, Any] | None) -> None:
+    """Restore RNG from a resume payload's ``rng_state`` (best-effort on CUDA)."""
+
+    if not rng:
+        return
+    if rng.get("python") is not None:
+        random.setstate(rng["python"])
+    if rng.get("numpy") is not None:
+        np.random.set_state(rng["numpy"])
+    if rng.get("torch") is not None:
+        torch_mod.set_rng_state(rng["torch"])
+    if rng.get("torch_cuda") is not None and torch_mod.cuda.is_available():
+        try:
+            torch_mod.cuda.set_rng_state_all(rng["torch_cuda"])
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def build_resume_payload(
+    *,
+    live_state_dict: Mapping[str, Any],
+    ema_shadow: Mapping[str, Any],
+    optimizer_state_dict: Mapping[str, Any],
+    scheduler_state_dict: Mapping[str, Any],
+    rng_state: Mapping[str, Any],
+    epoch: int,
+    train_config_digest: str,
+    seed: int,
+    run_id: str,
+    best_epoch: int | None,
+    best_validation_weighted_loss: float | None,
+    epochs_since_best: int,
+    ema_decay: float | None,
+    base_sha256: str = OFFICIAL_AIMNET2_WEIGHT_SHA256,
+) -> dict[str, Any]:
+    """Pure pack of true-resume state (no I/O). Used by live export + tests.
+
+    Caller must pass **live** (non-EMA) ``live_state_dict`` — never snapshot
+    inside an EMA weight-swap context.
+
+    Optimizer / scheduler / tensor maps are **deep-copied** so a later
+    ``optimizer.step()`` cannot mutate an already-built payload in place
+    (torch ``state_dict()`` returns live tensor refs).
+    """
+
+    return {
+        "schema": RESUME_SCHEMA,
+        "epoch": int(epoch),
+        "live_state_dict": copy.deepcopy(dict(live_state_dict)),
+        "ema_shadow": copy.deepcopy(dict(ema_shadow)),
+        "optimizer_state_dict": copy.deepcopy(optimizer_state_dict),
+        "scheduler_state_dict": copy.deepcopy(scheduler_state_dict),
+        "rng_state": copy.deepcopy(dict(rng_state)),
+        "train_config_digest": train_config_digest,
+        "seed": int(seed),
+        "run_id": run_id,
+        "best_epoch": best_epoch,
+        "best_validation_weighted_loss": best_validation_weighted_loss,
+        "epochs_since_best": int(epochs_since_best),
+        "ema_decay": ema_decay,
+        "base_sha256": base_sha256,
+    }
+
+
+def apply_resume_payload(
+    payload: Mapping[str, Any],
+    *,
+    torch_mod: Any,
+    core: Any,
+    optimizer: Any,
+    scheduler: Any,
+    ema_shadow_out: MutableMapping[str, Any],
+    expected_digest: str,
+    ema_decay: float | None,
+) -> dict[str, Any]:
+    """Restore live params / EMA / optimizer / scheduler / RNG. Fail-closed.
+
+    Mutates ``core``, ``optimizer``, ``scheduler``, and ``ema_shadow_out``.
+    Returns bookkeeping for ``run_one_seed`` (``epoch`` = last completed).
+    """
+
+    if not isinstance(payload, dict) or payload.get("schema") != RESUME_SCHEMA:
+        raise TrainerError(
+            f"bad resume schema: expected {RESUME_SCHEMA!r}, "
+            f"got {payload.get('schema') if isinstance(payload, dict) else type(payload)}"
+        )
+    digest = payload.get("train_config_digest")
+    if digest != expected_digest:
+        raise TrainerError(
+            "resume train_config_digest mismatch: "
+            f"{digest!r} != {expected_digest!r}"
+        )
+    live_sd = payload.get("live_state_dict")
+    if not isinstance(live_sd, dict):
+        raise TrainerError("resume missing live_state_dict")
+    core.load_state_dict(live_sd, strict=True)
+
+    ema_shadow_out.clear()
+    ema_in = payload.get("ema_shadow")
+    if ema_decay is not None:
+        if not isinstance(ema_in, dict):
+            raise TrainerError("resume missing ema_shadow")
+        for name, param in core.named_parameters():
+            if not param.requires_grad:
+                continue
+            if name not in ema_in:
+                raise TrainerError(f"resume missing ema_shadow for {name!r}")
+            t = ema_in[name]
+            if not isinstance(t, torch_mod.Tensor):
+                t = torch_mod.as_tensor(t)
+            ema_shadow_out[name] = t.detach().to(device=param.device).clone()
+
+    opt_sd = payload.get("optimizer_state_dict")
+    if not isinstance(opt_sd, dict):
+        raise TrainerError("resume missing optimizer_state_dict")
+    optimizer.load_state_dict(opt_sd)
+
+    sch_sd = payload.get("scheduler_state_dict")
+    if not isinstance(sch_sd, dict):
+        raise TrainerError("resume missing scheduler_state_dict")
+    scheduler.load_state_dict(sch_sd)
+
+    restore_rng_state(torch_mod, payload.get("rng_state"))
+
+    epoch = int(payload["epoch"])
+    return {
+        "epoch": epoch,
+        "best_epoch": payload.get("best_epoch"),
+        "best_validation_weighted_loss": payload.get("best_validation_weighted_loss"),
+        "epochs_since_best": int(payload.get("epochs_since_best", 0)),
+    }
 
 
 class LiveAimnet2TrainBackend:
@@ -642,3 +796,82 @@ class LiveAimnet2TrainBackend:
         audit["raw_weight_sha256"] = hashlib.sha256(raw_path.read_bytes()).hexdigest()
         audit["exported_weight_kind"] = on_disk.get("weight_kind")
         return audit
+
+    def export_resume_checkpoint(
+        self,
+        path: Path,
+        *,
+        epoch: int,
+        best_epoch: int | None = None,
+        best_validation_weighted_loss: float | None = None,
+        epochs_since_best: int = 0,
+        train_config_digest: str | None = None,
+    ) -> dict[str, Any]:
+        """Write ``epoch_NNNN.resume.pt`` — full train state for true resume.
+
+        Does **not** change ``epoch_NNNN.pt`` semantics (EMA weights for
+        pre-screen / sci-val). Resume payload holds live (non-EMA) params,
+        EMA shadows, optimizer, scheduler, and RNG states.
+
+        Live state is snapshotted **outside** ``_use_ema_weights()`` (do not
+        move this call into an EMA swap window).
+        """
+
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        # LOAD-BEARING: outside _use_ema_weights — live params, not EMA.
+        live_state = self._core_state_snapshot()
+        digest = (
+            train_config_digest
+            if train_config_digest is not None
+            else self.train_config_digest
+        )
+        payload = build_resume_payload(
+            live_state_dict=live_state,
+            ema_shadow={
+                name: t.detach().cpu().clone() for name, t in self._ema_shadow.items()
+            },
+            optimizer_state_dict=self.optimizer.state_dict(),
+            scheduler_state_dict=self.scheduler.state_dict(),
+            rng_state=capture_rng_state(self.torch),
+            epoch=int(epoch),
+            train_config_digest=digest,
+            seed=int(self.seed),
+            run_id=self.config.run_id,
+            best_epoch=best_epoch,
+            best_validation_weighted_loss=best_validation_weighted_loss,
+            epochs_since_best=int(epochs_since_best),
+            ema_decay=self.ema_decay,
+        )
+        self.torch.save(payload, path)
+        raw = path.read_bytes()
+        return {
+            "path": str(path),
+            "bytes": len(raw),
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "live_resume_written": True,
+            "epoch": int(epoch),
+            "train_config_digest": digest,
+        }
+
+    def load_resume_checkpoint(self, path: Path) -> dict[str, Any]:
+        """Restore live params / EMA / optimizer / scheduler / RNG from resume file.
+
+        Fail-closed if ``train_config_digest`` mismatches this backend's recipe.
+        Returns bookkeeping dict consumed by ``run_one_seed`` (epoch = last done).
+        """
+
+        path = Path(path)
+        if not path.is_file():
+            raise TrainerError(f"missing resume checkpoint: {path}")
+        payload = self.torch.load(path, map_location="cpu", weights_only=False)
+        return apply_resume_payload(
+            payload,
+            torch_mod=self.torch,
+            core=self.core,
+            optimizer=self.optimizer,
+            scheduler=self.scheduler,
+            ema_shadow_out=self._ema_shadow,
+            expected_digest=self.train_config_digest,
+            ema_decay=self.ema_decay,
+        )

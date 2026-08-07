@@ -6,7 +6,10 @@ from pathlib import Path
 
 import pytest
 
-from nhc_deprot.data.paths import TRAIN_ROOTS, VALIDATION_ROOTS
+from nhc_deprot.data.paths import (
+    LEGACY_PILOT_TRAIN_ROOTS,
+    LEGACY_PILOT_VALIDATION_ROOTS,
+)
 from nhc_deprot.data.weighted_dataset import audit_weighted_dataset
 from nhc_deprot.generation.layout import init_generation
 from nhc_deprot.pipeline.d3_projection import run_d3_campaign
@@ -32,7 +35,7 @@ def _prepare_teacher(tmp_path: Path, roots: list[str], n_frames: int = 2):
 
 
 def test_d3_then_weighted_full_pilot_queue(tmp_path: Path) -> None:
-    roots = list(TRAIN_ROOTS) + list(VALIDATION_ROOTS)
+    roots = list(LEGACY_PILOT_TRAIN_ROOTS) + list(LEGACY_PILOT_VALIDATION_ROOTS)
     layout = _prepare_teacher(tmp_path, roots, n_frames=2)
 
     d3 = run_d3_campaign(layout=layout, root_ids=roots, dry_run=True)
@@ -44,7 +47,7 @@ def test_d3_then_weighted_full_pilot_queue(tmp_path: Path) -> None:
     # one receipt path
     sample = (
         layout.d3_dir
-        / TRAIN_ROOTS[0]
+        / LEGACY_PILOT_TRAIN_ROOTS[0]
         / "cation"
         / "frame_0000.json"
     )
@@ -52,8 +55,8 @@ def test_d3_then_weighted_full_pilot_queue(tmp_path: Path) -> None:
 
     weighted = assemble_weighted_dataset(
         layout=layout,
-        train_roots=list(TRAIN_ROOTS),
-        validation_roots=list(VALIDATION_ROOTS),
+        train_roots=list(LEGACY_PILOT_TRAIN_ROOTS),
+        validation_roots=list(LEGACY_PILOT_VALIDATION_ROOTS),
         dry_run=True,
         overwrite=True,
         run_audit=True,
@@ -75,18 +78,20 @@ def test_d3_then_weighted_full_pilot_queue(tmp_path: Path) -> None:
 
 
 def test_weighted_requires_matching_d3(tmp_path: Path) -> None:
-    layout = _prepare_teacher(tmp_path, list(TRAIN_ROOTS[:1]), n_frames=1)
+    layout = _prepare_teacher(tmp_path, list(LEGACY_PILOT_TRAIN_ROOTS[:1]), n_frames=1)
     # no D3 yet
     with pytest.raises(Exception, match="missing D3|no teacher"):
         assemble_weighted_dataset(
             layout=layout,
-            train_roots=list(TRAIN_ROOTS[:1]),
-            validation_roots=list(VALIDATION_ROOTS[:1]),
+            train_roots=list(LEGACY_PILOT_TRAIN_ROOTS[:1]),
+            validation_roots=list(LEGACY_PILOT_VALIDATION_ROOTS[:1]),
             dry_run=True,
         )
 
 
 def test_d3_live_refused(tmp_path: Path) -> None:
-    layout = _prepare_teacher(tmp_path, list(TRAIN_ROOTS[:1]), n_frames=1)
+    layout = _prepare_teacher(tmp_path, list(LEGACY_PILOT_TRAIN_ROOTS[:1]), n_frames=1)
     with pytest.raises(Exception, match="live D3|not authorized"):
-        run_d3_campaign(layout=layout, root_ids=list(TRAIN_ROOTS[:1]), dry_run=False)
+        run_d3_campaign(
+            layout=layout, root_ids=list(LEGACY_PILOT_TRAIN_ROOTS[:1]), dry_run=False
+        )

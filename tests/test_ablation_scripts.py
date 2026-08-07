@@ -255,6 +255,7 @@ def test_run_train_ablation_live_with_mock_backend(tmp_path: Path) -> None:
         aimnet2_train_authorized=True,
         base_config=base,
         backend=backend,
+        require_merge_meta=False,  # mock backend unit path; live ops use real meta
     )
     assert summary["status"] == "LIVE_ABLATION_PASS"
     assert summary["dry_run"] is False

@@ -290,6 +290,7 @@ def test_live_export_checkpoint_writes_pt_under_run_seed(tmp_path: Path) -> None
         dry_run=False,
         aimnet2_train_authorized=True,
         backend=backend,
+        require_merge_meta=False,
     )
     assert camp["status"] == "LIVE_TRAIN_PASS"
     assert camp["failed_seed_count"] == 0
@@ -353,6 +354,7 @@ def test_live_without_export_checkpoint_writes_meta_only(tmp_path: Path) -> None
         dry_run=False,
         aimnet2_train_authorized=True,
         backend=_NoExportBackend(),
+        require_merge_meta=False,
     )
     assert camp["status"] == "LIVE_TRAIN_PASS"
     seed_dir = layout.train_run_seed_dir("g001", run_id, 20260730)
@@ -407,6 +409,7 @@ def test_dual_export_audit_runs_on_last_epoch_only(tmp_path: Path) -> None:
         dry_run=False,
         aimnet2_train_authorized=True,
         backend=backend,
+        require_merge_meta=False,
     )
     assert camp["status"] == "LIVE_TRAIN_PASS"
     assert [p.name for p in backend.audited_paths] == ["epoch_0005.pt"]
@@ -445,6 +448,7 @@ def test_backend_without_audit_method_is_unaffected(tmp_path: Path) -> None:
         dry_run=False,
         aimnet2_train_authorized=True,
         backend=backend,
+        require_merge_meta=False,
     )
     assert camp["status"] == "LIVE_TRAIN_PASS"
     seed_dir = layout.train_run_seed_dir("g001", run_id, 20260730)

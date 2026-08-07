@@ -331,7 +331,9 @@ def assemble_weighted_dataset(
         "frozen_d3_projection_binding": {
             "d3_root": str(layout.d3_dir),
             "exact_receipt_bytes_preserved": True,
-            "result_outcome": "DRY_RUN_D3_PASS" if dry_run else "UNKNOWN",
+            "result_outcome": (
+                "DRY_RUN_D3_PASS" if dry_run else "LIVE_D3_PASS"
+            ),
             "receipt_count": sum(frame_count_by_split.values()),
         },
         "candidate_endpoint_weighting": {
@@ -373,7 +375,11 @@ def assemble_weighted_dataset(
         "schema": CAMPAIGN_SCHEMA,
         "generation_id": layout.generation_id,
         "dry_run": dry_run,
-        "status": "DRY_RUN_WEIGHTED_DATASET_PASS",
+        "status": (
+            "DRY_RUN_WEIGHTED_DATASET_PASS"
+            if dry_run
+            else "LIVE_WEIGHTED_DATASET_PASS"
+        ),
         "frame_count_by_split": frame_count_by_split,
         "frame_count": sum(frame_count_by_split.values()),
         "d3_recomputation_performed": False,

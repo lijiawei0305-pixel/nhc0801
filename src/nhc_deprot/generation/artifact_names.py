@@ -1,6 +1,6 @@
 """Canonical experimental artifact names under runs/<generation>/.
 
-Policy (AGENTS.md Experimental data naming):
+Policy (docs/agent/naming.md; indexed from AGENTS.md):
   - Product dirs: teacher_gpu_g00N/, epoch0_val_batches/g00N/, train_g00N/, models/v0.1/
   - Released weights: models/vX.Y/model.pt (short version tag; no long English stems)
   - Log basenames: prefer group-scoped stable names; accept legacy *02c* as read aliases
@@ -65,6 +65,15 @@ def train_checkpoint_raw_weight_name(epoch: int) -> str:
     Never a release path; sci-val and pre-screen read the main ``.pt``.
     """
     return f"{train_checkpoint_stem(epoch)}.raw.pt"
+
+
+def train_checkpoint_resume_name(epoch: int) -> str:
+    """True-resume sibling: optimizer/EMA/RNG state, e.g. epoch_0120.resume.pt.
+
+    Does **not** replace ``epoch_NNNN.pt`` (EMA weights for pre-screen/sci-val).
+    Insurance against mid-run interrupt; not a release path.
+    """
+    return f"{train_checkpoint_stem(epoch)}.resume.pt"
 
 
 # --- Released AIMNet2 versions (selected after train + scientific selection) ---

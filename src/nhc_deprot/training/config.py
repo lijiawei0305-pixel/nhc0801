@@ -49,11 +49,20 @@ class TrainingConfig:
     scheduler_patience_epochs: int = 15
     scheduler_min_lr: float = 1.0e-7
     checkpoint_interval_epochs: int = 10
+    # Resume siblings are crash insurance — default sparser than EMA .pt.
+    # None → same cadence as checkpoint_interval_epochs.
+    resume_checkpoint_interval_epochs: int | None = 10
     quick_validation_each_epoch: bool = True
     quick_validation_may_select_final_model: bool = False
     all_seed_and_checkpoint_outcomes_retained: bool = True
     quick_checkpoint_maximum_count_per_seed: int = 4
     official_base_weight_required: bool = True
+    # Early stop on quick-val **total weighted loss** (never energy-only; T1).
+    # patience=None → disabled (fixed-epochs path). When set, loop cap is
+    # early_stop_max_epochs (not epochs); epochs remains recipe identity.
+    early_stop_patience_epochs: int | None = None
+    early_stop_max_epochs: int = 480
+    early_stop_metric: str = "validation_weighted_loss"
 
     def as_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -73,3 +82,22 @@ class TrainingConfig:
             raise ValueError(
                 f"ema_decay must be None or in (0, 1) (got {self.ema_decay!r})"
             )
+        if self.early_stop_patience_epochs is not None:
+            if int(self.early_stop_patience_epochs) <= 0:
+                raise ValueError(
+                    "early_stop_patience_epochs must be None or positive"
+                )
+            if int(self.early_stop_max_epochs) <= 0:
+                raise ValueError("early_stop_max_epochs must be positive")
+        if self.early_stop_metric != "validation_weighted_loss":
+            raise ValueError(
+                "early_stop_metric must be validation_weighted_loss "
+                f"(got {self.early_stop_metric!r}; T1 forbids energy-only stop)"
+            )
+        if self.resume_checkpoint_interval_epochs is not None:
+            if int(self.resume_checkpoint_interval_epochs) <= 0:
+                raise ValueError(
+                    "resume_checkpoint_interval_epochs must be None or positive"
+                )
+        if int(self.checkpoint_interval_epochs) <= 0:
+            raise ValueError("checkpoint_interval_epochs must be positive")

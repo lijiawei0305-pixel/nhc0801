@@ -167,13 +167,13 @@ def _build_live_aimnet2_backend(
     layout: GenerationLayout,
     config: TrainingConfig,
     base_weight: Path,
+    seed: int,
     device: str = "cuda",
 ) -> TrainBackend:
-    """Construct :class:`LiveAimnet2TrainBackend` for one recipe (live only).
+    """Construct :class:`LiveAimnet2TrainBackend` for one seed (live only).
 
-    Uses the first seed in ``config.seeds`` for model/sampler init. Multi-seed
-    reuse of a single backend instance is a known multi_seed API limitation
-    (see ``nhc0801_live_orchestrate.py`` for per-seed construction).
+    G7 / mindmap step 4: every seed reloads official epoch-0 weights from
+    ``base_weight`` — never continue from a previous seed's trained state.
     """
 
     # Lazy import: keep dry-run / unit tests free of torch + AIMNet2.
@@ -182,14 +182,11 @@ def _build_live_aimnet2_backend(
     weight = Path(base_weight)
     if not weight.is_file():
         raise AblationCliError(f"missing --base-weight file: {weight}")
-    seeds = config.seeds
-    if not seeds:
-        raise AblationCliError("TrainingConfig.seeds is empty; cannot build live backend")
     return LiveAimnet2TrainBackend(
         dataset_root=layout.datasets_dir,
         base_weight=weight,
         config=config,
-        seed=int(seeds[0]),
+        seed=int(seed),
         device=device,
     )
 
@@ -206,15 +203,15 @@ def run_train_ablation(
     backend: TrainBackend | None = None,
     base_weight: Path | None = None,
     device: str = "cuda",
+    require_merge_meta: bool | None = None,
 ) -> dict[str, Any]:
     """Run multi-seed training once per ``run_id`` (sequential).
 
     Live train (``dry_run=False``) requires ``aimnet2_train_authorized`` and a
     non-dry :class:`TrainBackend`. Callers may inject ``backend`` (tests /
-    custom), or pass ``base_weight`` so each recipe builds
-    :class:`LiveAimnet2TrainBackend` (same pattern as
-    ``nhc0801_live_orchestrate.py``). Dry-run ignores both and keeps the
-    multi-seed default :class:`DryRunTrainBackend`.
+    custom), or pass ``base_weight`` so **each seed** builds a fresh
+    :class:`LiveAimnet2TrainBackend` from the official weight (G7). Dry-run
+    ignores both and keeps the multi-seed default :class:`DryRunTrainBackend`.
     """
 
     campaigns: list[dict[str, Any]] = []
@@ -222,18 +219,32 @@ def run_train_ablation(
         cfg = training_config_for_run_id(rid, base=base_config)
         cfg.assert_policy()
         active_backend: TrainBackend | None = backend
+        backend_factory = None
         if not dry_run and active_backend is None:
             if base_weight is None:
                 raise AblationCliError(
                     "live ablation requires backend= or base_weight= "
                     "to supply LiveAimnet2TrainBackend"
                 )
-            active_backend = _build_live_aimnet2_backend(
-                layout=layout,
-                config=cfg,
-                base_weight=base_weight,
-                device=device,
-            )
+            weight = Path(base_weight)
+
+            def _factory(
+                seed: int,
+                *,
+                _layout: GenerationLayout = layout,
+                _cfg: TrainingConfig = cfg,
+                _weight: Path = weight,
+                _device: str = device,
+            ) -> TrainBackend:
+                return _build_live_aimnet2_backend(
+                    layout=_layout,
+                    config=_cfg,
+                    base_weight=_weight,
+                    seed=seed,
+                    device=_device,
+                )
+
+            backend_factory = _factory
         camp = run_multi_seed_training(
             layout=layout,
             config=cfg,
@@ -243,6 +254,8 @@ def run_train_ablation(
             train_batch_id=train_batch_id,
             run_id=rid,
             backend=active_backend,
+            backend_factory=backend_factory,
+            require_merge_meta=require_merge_meta,
         )
         campaigns.append(
             {
