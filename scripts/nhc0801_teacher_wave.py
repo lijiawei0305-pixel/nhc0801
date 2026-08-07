@@ -196,7 +196,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--roots", default="train+val", choices=("train", "val", "train+val"))
     p.add_argument("--max-parallel", type=int, default=10, help="Max concurrent endpoints")
     p.add_argument("--threads", type=int, default=0, help="0 => profile default (10)")
-    p.add_argument("--max-steps", type=int, default=100)
+    p.add_argument(
+        "--max-steps",
+        type=int,
+        default=250,
+        help="Parent geomeTRIC max steps (default 250; match GAU/parent contract)",
+    )
     p.add_argument(
         "--force-n",
         type=int,

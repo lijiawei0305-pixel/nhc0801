@@ -119,6 +119,7 @@ def pick_gpus(
     exclude: Sequence[int] | None = None,
     allow_shared: bool = True,
     require_free: bool = False,
+    allow_vasp_share: bool = False,
 ) -> list[int]:
     """Pick up to *n* GPUs for new NHC jobs.
 
@@ -127,6 +128,8 @@ def pick_gpus(
       2. If require_free: process_count == 0 only.
       3. Else if not allow_shared: process_count == 0 preferred, then lowest used_mib.
       4. Sort by (process_count, used_mib, index).
+      5. If still short and allow_vasp_share: co-locate on VASP cards (lowest used_mib).
+         Never kills VASP; only used when the machine is fully co-occupied.
 
     Raises GpuInventoryError if fewer than *n* eligible GPUs.
     """
@@ -143,10 +146,24 @@ def pick_gpus(
             eligible = free_only
     eligible.sort(key=lambda s: (s.process_count, s.used_mib, s.index))
     picked = [s.index for s in eligible[:n]]
+    if len(picked) < n and allow_vasp_share and not require_free:
+        # Fallback: share with VASP (do not kill). Prefer lowest used memory.
+        used = set(picked)
+        vasp_slots = [
+            s
+            for s in slots
+            if s.index not in ban and s.index not in used and s.has_vasp
+        ]
+        vasp_slots.sort(key=lambda s: (s.used_mib, s.process_count, s.index))
+        for s in vasp_slots:
+            if len(picked) >= n:
+                break
+            picked.append(s.index)
     if len(picked) < n:
         raise GpuInventoryError(
             f"need {n} eligible GPUs, only {len(picked)} available "
-            f"(no-VASP, exclude={sorted(ban)}, require_free={require_free}); "
+            f"(no-VASP, allow_vasp_share={allow_vasp_share}, exclude={sorted(ban)}, "
+            f"require_free={require_free}); "
             f"inventory={[ (s.index, s.used_mib, s.process_count, s.has_vasp) for s in slots ]}"
         )
     return picked

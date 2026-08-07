@@ -62,7 +62,7 @@ class LiveParentTeacherEngine:
         self,
         *,
         gold_xyz_dir: Path,
-        max_steps: int = 100,
+        max_steps: int = 250,
         pyscf_python: str = "/home/plab/test/WJW/env/conda/gpupyscf/bin/python",
         worker_script: str | None = None,
         backend: str = "cpu",

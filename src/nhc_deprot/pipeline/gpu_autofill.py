@@ -84,30 +84,113 @@ def list_free_gpu_ids(all_ids: Sequence[int]) -> list[int]:
     return _free(all_ids)
 
 
+def _grad_max_rms(gradient: Any) -> tuple[float, float] | None:
+    """Return (gmax, grms) from hartree/bohr gradient rows, or None if empty."""
+    if not gradient:
+        return None
+    flat = [abs(float(x)) for row in gradient for x in row]
+    if not flat:
+        return None
+    gmax = max(flat)
+    grms = (sum(x * x for x in flat) / len(flat)) ** 0.5
+    return gmax, grms
+
+
+def _protocol_ok(frame: dict[str, Any]) -> bool:
+    func = (frame.get("functional") or "").lower().replace("_", "-")
+    return func == "wb97m-d3bj" and frame.get("basis") == "def2-TZVPP"
+
+
+def load_terminal_frame(endpoint_dir: Path) -> dict[str, Any] | None:
+    """Load the terminal teacher frame (is_terminal) or highest frame_*.json index."""
+    frames = sorted(endpoint_dir.glob("frame_*.json"))
+    if not frames:
+        return None
+    terminal: dict[str, Any] | None = None
+    best_idx = -1
+    best_payload: dict[str, Any] | None = None
+    for path in frames:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if payload.get("is_terminal") is True:
+            terminal = payload
+        idx = payload.get("frame_index")
+        if isinstance(idx, int) and idx >= best_idx:
+            best_idx = idx
+            best_payload = payload
+        elif best_payload is None:
+            best_payload = payload
+    return terminal if terminal is not None else best_payload
+
+
+def endpoint_grad_gate_ok(endpoint_dir: Path) -> bool:
+    """True when final (not mid-trajectory) parent gradient passes GAU-style gates.
+
+    Prefer ``manifest.json`` ``final_grad_*`` (authoritative post-opt). Fall back to
+    the terminal frame's gradient. Never use ``frame_0001`` alone: early trajectory
+    steps almost always fail the gate and falsely mark complete endpoints PARTIAL.
+    """
+    man = endpoint_dir / "manifest.json"
+    if man.is_file():
+        try:
+            m = json.loads(man.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            m = {}
+        fmax = m.get("final_grad_max_eh_bohr")
+        frms = m.get("final_grad_rms_eh_bohr")
+        if fmax is not None and frms is not None:
+            try:
+                return float(fmax) < GRAD_MAX and float(frms) < GRAD_RMS
+            except (TypeError, ValueError):
+                pass
+    fr = load_terminal_frame(endpoint_dir)
+    if fr is None:
+        return False
+    stats = _grad_max_rms(fr.get("gradient_hartree_per_bohr"))
+    if stats is None:
+        return False
+    gmax, grms = stats
+    return gmax < GRAD_MAX and grms < GRAD_RMS
+
+
 def endpoint_done_ok(out_root: Path, root_id: str, endpoint: str) -> bool:
+    """True when a finished teacher endpoint product is usable (do not re-CLAIM).
+
+    Requires live manifest, complete geometry opt, ≥2 frames, P01 protocol on a
+    frame, and **final** gradient under gate (manifest or terminal frame).
+    """
     d = out_root / root_id / endpoint
     man = d / "manifest.json"
-    f1 = d / "frame_0001.json"
-    if not man.is_file() or not f1.is_file():
+    if not man.is_file():
         return False
     try:
         m = json.loads(man.read_text(encoding="utf-8"))
-        fr = json.loads(f1.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError):
         return False
     if m.get("live_chemistry") is not True or m.get("dry_run") is True:
         return False
-    if (fr.get("functional") or "").lower().replace("_", "-") != "wb97m-d3bj":
+    if m.get("complete_geometry_optimization") is not True:
         return False
-    if fr.get("basis") != "def2-TZVPP":
+    if int(m.get("frame_count") or 0) < 2:
         return False
-    g = fr.get("gradient_hartree_per_bohr") or []
-    flat = [abs(float(x)) for row in g for x in row]
-    if not flat:
-        return False
-    gmax = max(flat)
-    grms = (sum(x * x for x in flat) / len(flat)) ** 0.5
-    return gmax < GRAD_MAX and grms < GRAD_RMS
+    # Protocol check: terminal frame preferred; any frame_*.json as fallback.
+    fr = load_terminal_frame(d)
+    if fr is None or not _protocol_ok(fr):
+        # tolerate missing terminal fields by scanning one early frame for labels
+        for cand in (d / "frame_0001.json", d / "frame_0000.json"):
+            if not cand.is_file():
+                continue
+            try:
+                fr = json.loads(cand.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                continue
+            if _protocol_ok(fr):
+                break
+        else:
+            return False
+    return endpoint_grad_gate_ok(d)
 
 
 @dataclass
@@ -239,17 +322,8 @@ def run_one_endpoint_job(
     )
     wall = time.perf_counter() - t0
     ok = bool(result.get("converged")) and int(result.get("frame_count") or 0) >= 2
-    # post gradient gate
-    f1 = out_dir / "frame_0001.json"
-    gate_ok = False
-    if f1.is_file():
-        fr = json.loads(f1.read_text(encoding="utf-8"))
-        g = fr.get("gradient_hartree_per_bohr") or []
-        flat = [abs(float(x)) for row in g for x in row]
-        if flat:
-            gmax = max(flat)
-            grms = (sum(x * x for x in flat) / len(flat)) ** 0.5
-            gate_ok = gmax < GRAD_MAX and grms < GRAD_RMS
+    # Final-gradient gate (manifest / terminal frame) — not mid-trajectory frame_0001
+    gate_ok = endpoint_grad_gate_ok(out_dir)
     status = "PASS" if ok and gate_ok else ("PARTIAL" if ok else "FAIL")
     return {
         "root_id": root_id,

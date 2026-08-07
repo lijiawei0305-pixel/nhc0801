@@ -8,7 +8,12 @@ from pathlib import Path
 import pytest
 
 from nhc_deprot.contracts.parent_protocol import PROTOCOL_SHA256
-from nhc_deprot.data.paths import TRAIN_ROOTS, VALIDATION_ROOTS
+from nhc_deprot.data.paths import (
+    LEGACY_PILOT_TRAIN_ROOTS,
+    LEGACY_PILOT_VALIDATION_ROOTS,
+    TRAIN_ROOTS,
+    VALIDATION_ROOTS,
+)
 from nhc_deprot.generation.layout import init_generation
 from nhc_deprot.pipeline.teacher_runner import (
     DryRunTeacherEngine,
@@ -22,21 +27,22 @@ from nhc_deprot.resources.profiles import get_profile
 
 def test_default_queue_is_train_plus_val_no_test() -> None:
     q = default_pilot_root_queue()
-    assert list(q[:3]) == list(TRAIN_ROOTS)
-    assert list(q[3:]) == list(VALIDATION_ROOTS)
-    assert len(q) == 5
+    # Active TVT may be resplit (150+16); queue = train ∪ val, no FT.
+    assert list(q) == list(TRAIN_ROOTS) + list(VALIDATION_ROOTS)
+    assert len(q) == len(TRAIN_ROOTS) + len(VALIDATION_ROOTS)
+    assert set(q).isdisjoint({"final_test", "test"})
 
 
 def test_plan_teacher_paths(tmp_path: Path) -> None:
     layout, _, _ = init_generation(nhc0801_root=tmp_path / "NHC0801")
-    plan = plan_teacher_paths(layout, TRAIN_ROOTS[:1])
+    plan = plan_teacher_paths(layout, LEGACY_PILOT_TRAIN_ROOTS[:1])
     assert plan["mindmap_step"] == 2
     assert plan["roots"][0]["cation_dir"].endswith("cation")
 
 
 def test_dry_run_campaign_writes_g001_tree(tmp_path: Path) -> None:
     layout, _, _ = init_generation(nhc0801_root=tmp_path / "NHC0801")
-    roots = list(TRAIN_ROOTS)  # 3 roots
+    roots = list(LEGACY_PILOT_TRAIN_ROOTS)  # 3 pilot roots for fast dry-run
     campaign = run_teacher_campaign(
         layout=layout,
         root_ids=roots,
@@ -75,7 +81,7 @@ def test_dry_run_campaign_writes_g001_tree(tmp_path: Path) -> None:
 
 def test_dry_run_dual_profile_two_slots(tmp_path: Path) -> None:
     layout, _, _ = init_generation(nhc0801_root=tmp_path / "NHC0801")
-    roots = list(TRAIN_ROOTS) + list(VALIDATION_ROOTS)  # 5
+    roots = list(LEGACY_PILOT_TRAIN_ROOTS) + list(LEGACY_PILOT_VALIDATION_ROOTS)  # 5
     campaign = run_teacher_campaign(
         layout=layout,
         root_ids=roots,
@@ -97,7 +103,7 @@ def test_live_without_auth_fails(tmp_path: Path) -> None:
     with pytest.raises(TeacherRunnerError, match="teacher_pyscf_authorized"):
         run_teacher_campaign(
             layout=layout,
-            root_ids=TRAIN_ROOTS[:1],
+            root_ids=LEGACY_PILOT_TRAIN_ROOTS[:1],
             engine=FakeLive(),
             dry_run=False,
             teacher_pyscf_authorized=False,
@@ -111,7 +117,7 @@ def test_live_dry_engine_rejected(tmp_path: Path) -> None:
     with pytest.raises(TeacherRunnerError, match="non-dry TeacherEngine"):
         run_teacher_campaign(
             layout=layout,
-            root_ids=TRAIN_ROOTS[:1],
+            root_ids=LEGACY_PILOT_TRAIN_ROOTS[:1],
             engine=DryRunTeacherEngine(),
             dry_run=False,
             teacher_pyscf_authorized=True,

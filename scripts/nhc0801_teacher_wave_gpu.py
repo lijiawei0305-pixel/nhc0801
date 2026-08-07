@@ -195,7 +195,12 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--max-parallel", type=int, default=8, help="Concurrent GPUs (machine has 8)")
     p.add_argument("--gpu-ids", default="0,1,2,3,4,5,6,7", help="Physical GPU ids")
     p.add_argument("--host-threads", type=int, default=2)
-    p.add_argument("--max-steps", type=int, default=100)
+    p.add_argument(
+        "--max-steps",
+        type=int,
+        default=250,
+        help="Parent geomeTRIC max steps (default 250; match GAU/parent contract)",
+    )
     p.add_argument(
         "--out-subdir",
         default="teacher_gpu_g002",

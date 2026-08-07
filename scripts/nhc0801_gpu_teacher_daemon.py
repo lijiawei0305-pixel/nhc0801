@@ -26,7 +26,6 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from nhc_deprot.pipeline.gpu_autofill import (  # noqa: E402
     DEFAULT_XYZ_SEARCH,
-    G001_ROOTS,
     AutofillState,
     _utc,
     assign_batches,
@@ -50,10 +49,20 @@ def scan_done_across(gen_root: Path, root_id: str, endpoint: str) -> bool:
 
 def rebuild_queue(state: AutofillState, gen_root: Path, xyz_dirs: list[Path]) -> None:
     pool = load_pool_inchikeys(Path(state.pool_csv))
-    exclude = set(state.exclude_roots) | set(G001_ROOTS)
+    # Exclude pilot Val roots by default (e0 owns Val baseline).
+    # Do NOT hard-exclude Train roots — m250 full-traj re-label of Train3 is allowed
+    # via state.exclude_roots (or by simply leaving them out of exclude_roots).
+    from nhc_deprot.data.paths import TRAIN_ROOTS as _TRAIN_ROOTS
+    from nhc_deprot.data.paths import VALIDATION_ROOTS as _VAL_ROOTS
+
+    exclude = set(state.exclude_roots) | set(_VAL_ROOTS)
+    train_order = tuple(_TRAIN_ROOTS)
+    train_set = set(train_order)
+
     # roots fully done in any teacher_gpu* dir
     fully_done: list[str] = []
     pending_roots: list[str] = []
+    seen: set[str] = set()
     for root_id in pool:
         if root_id in exclude:
             continue
@@ -63,8 +72,28 @@ def rebuild_queue(state: AutofillState, gen_root: Path, xyz_dirs: list[Path]) ->
         neu = scan_done_across(gen_root, root_id, "neutral")
         if cat and neu:
             fully_done.append(root_id)
+            seen.add(root_id)
             continue
         pending_roots.append(root_id)
+        seen.add(root_id)
+
+    # Ensure generation Train roots stay in the queue even if missing from pool CSV.
+    for root_id in train_order:
+        if root_id in exclude or root_id in seen:
+            continue
+        if has_pair(root_id, xyz_dirs) is None:
+            continue
+        cat = scan_done_across(gen_root, root_id, "cation")
+        neu = scan_done_across(gen_root, root_id, "neutral")
+        if cat and neu:
+            fully_done.append(root_id)
+        else:
+            pending_roots.append(root_id)
+
+    # Priority: incomplete Train roots first (pool may keep backfilling after).
+    train_pending = [r for r in train_order if r in set(pending_roots)]
+    rest = [r for r in pending_roots if r not in train_set]
+    pending_roots = train_pending + rest
 
     # build endpoint queue preserving root order; skip endpoints already done
     queue: list[dict] = []
@@ -209,11 +238,23 @@ def reap(state: AutofillState, state_path: Path) -> None:
             "log": str(log),
             "reaped_zombie_or_log": True,
         }
+        # Recover false PARTIAL from mid-trajectory gradient gate: product dir wins.
+        if rec["status"] != "PASS":
+            root_id = str(info.get("root_id") or key.split(":")[0])
+            endpoint = str(info.get("endpoint") or (key.split(":")[1] if ":" in key else ""))
+            gen_root = Path(state_path).resolve().parents[1]
+            for d in gen_root.glob("teacher_gpu*"):
+                if endpoint and endpoint_done_ok(d, root_id, endpoint):
+                    rec["status"] = "PASS"
+                    rec["recovered_from_product_dir"] = True
+                    rec["product_dir"] = str(d / root_id / endpoint)
+                    break
         if rec["status"] == "PASS":
             state.done.append(rec)
         else:
             state.failed.append(rec)
         finished_keys.append(key)
+
     for k in finished_keys:
         state.running.pop(k, None)
     # batch completion
@@ -252,7 +293,15 @@ def main(argv: list[str] | None = None) -> int:
     )
     p.add_argument("--gpu-ids", default="0,1,2,3,4,5,6,7")
     p.add_argument("--host-threads", type=int, default=2)
-    p.add_argument("--max-steps", type=int, default=100)
+    p.add_argument(
+        "--max-steps",
+        type=int,
+        default=250,
+        help=(
+            "Parent geomeTRIC max steps (GAU/parent contract; default 250). "
+            "Do not use 100 for new expansion."
+        ),
+    )
     p.add_argument("--poll-seconds", type=int, default=20)
     p.add_argument("--batch-size-roots", type=int, default=5)
     p.add_argument(
@@ -335,6 +384,17 @@ def main(argv: list[str] | None = None) -> int:
         # do not claim GPUs already in our running map
         claimed = {int(v["gpu_index"]) for v in state.running.values()}
         free = [g for g in free if g not in claimed]
+        # If every card already hosts some NHC parent (e0 fill / others) but this
+        # daemon still has Train work, co-locate on unused-by-us GPUs rather than
+        # stall until e0 drains. Never second-claim a GPU we already use.
+        if not free and state.queue:
+            free = [int(g) for g in state.gpu_ids if int(g) not in claimed]
+            if free:
+                print(
+                    f"[gpu-teacher] {_utc()} no exclusive free GPU; "
+                    f"co-locate on {free} for Train/pool catch-up",
+                    flush=True,
+                )
         print(
             f"[gpu-teacher] {_utc()} queue={len(state.queue)} "
             f"running={len(state.running)} free_gpus={free}",

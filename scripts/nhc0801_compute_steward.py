@@ -138,7 +138,23 @@ def force_reap_gpu_teacher_queue() -> int:
 def ensure_gpu_teacher_daemon() -> None:
     if has_proc("gpu_teacher_daemon.py") or has_proc("gpu_autofill_daemon.py"):
         return
-    log("gpu-teacher queue daemon missing — restarting")
+    # Honor explicit pause (obsolete max_steps=100 expansion / free GPUs for e0).
+    pause_note = LOGDIR / "gpu_teacher_pause.note"
+    if pause_note.is_file():
+        log("gpu-teacher paused (gpu_teacher_pause.note present) — not restarting")
+        return
+    if STATE.is_file():
+        try:
+            st = json.loads(STATE.read_text(encoding="utf-8"))
+            if st.get("paused") is True:
+                log(
+                    f"gpu-teacher paused ({st.get('pause_reason') or 'state.paused'}) "
+                    "— not restarting"
+                )
+                return
+        except (OSError, json.JSONDecodeError):
+            pass
+    log("gpu-teacher queue daemon missing — restarting with max-steps 250")
     out = LOGDIR / "gpu_teacher_daemon.out"
     cmd = f"""
 source /home/plab/test/WJW/env/envs/mlff.sh
@@ -150,11 +166,11 @@ python3 -u scripts/nhc0801_gpu_teacher_daemon.py \
   --generation-id {GEN} \
   --pool-csv {NHC}/docs/contracts/RIGID_SMALL_NHC_POOL_V001.csv \
   --gpu-ids 0,1,2,3,4,5,6,7 \
-  --host-threads 2 --max-steps 100 --poll-seconds 15 \
+  --host-threads 2 --max-steps 250 --poll-seconds 15 \
   --batch-size-roots 5
 """
     with out.open("a", encoding="utf-8") as fh:
-        fh.write(f"\n=== steward restart {utc()} ===\n")
+        fh.write(f"\n=== steward restart {utc()} max-steps=250 ===\n")
         subprocess.Popen(
             ["bash", "-lc", cmd],
             stdout=fh,
@@ -165,6 +181,12 @@ python3 -u scripts/nhc0801_gpu_teacher_daemon.py \
 
 def ensure_cpu_e0_backup() -> None:
     if has_proc("cpu_teacher_then_e0_backup"):
+        return
+    # Do not spawn legacy CPU backup while teacher expansion is paused for e0 mainline.
+    if (LOGDIR / "gpu_teacher_pause.note").is_file():
+        return
+    if has_proc("e0_val_only"):
+        # Live 4-GPU e0 already owns Val baseline — do not start competing backup.
         return
     script = LOGDIR / "cpu_teacher_then_e0_backup.sh"
     if not script.is_file():

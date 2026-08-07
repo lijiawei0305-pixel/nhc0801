@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from nhc_deprot.data.paths import TRAIN_ROOTS
+from nhc_deprot.data.paths import LEGACY_PILOT_TRAIN_ROOTS
 from nhc_deprot.resources.claim import (
     HostSnapshot,
     evaluate_claim,
@@ -69,17 +69,17 @@ def test_dual_requires_receipt_even_if_claim_pass() -> None:
 
 def test_worker_pool_claim_complete_no_retry() -> None:
     single = get_profile(OFFICIAL_DEFAULT)
-    pool = build_pool(single, TRAIN_ROOTS, claim_pass=True)
-    assert claim_next_root(pool, 0) == TRAIN_ROOTS[0]
+    pool = build_pool(single, LEGACY_PILOT_TRAIN_ROOTS, claim_pass=True)
+    assert claim_next_root(pool, 0) == LEGACY_PILOT_TRAIN_ROOTS[0]
     with pytest.raises(WorkerPoolError, match="not idle"):
         claim_next_root(pool, 0)
-    complete_root(pool, TRAIN_ROOTS[0], success=False, reason="SCF_FAIL")
-    assert pool.tasks[TRAIN_ROOTS[0]].status == "failed"
+    complete_root(pool, LEGACY_PILOT_TRAIN_ROOTS[0], success=False, reason="SCF_FAIL")
+    assert pool.tasks[LEGACY_PILOT_TRAIN_ROOTS[0]].status == "failed"
     # no auto re-queue
-    assert pool.tasks[TRAIN_ROOTS[0]].status != "ready"
+    assert pool.tasks[LEGACY_PILOT_TRAIN_ROOTS[0]].status != "ready"
     nxt = claim_next_root(pool, 0)
-    assert nxt == TRAIN_ROOTS[1]
-    complete_root(pool, TRAIN_ROOTS[1], success=True)
+    assert nxt == LEGACY_PILOT_TRAIN_ROOTS[1]
+    complete_root(pool, LEGACY_PILOT_TRAIN_ROOTS[1], success=True)
     summary = progress_summary(pool)
     assert summary["failed"] == 1
     assert summary["done"] == 1
@@ -88,7 +88,7 @@ def test_worker_pool_claim_complete_no_retry() -> None:
 
 def test_dual_pool_two_workers() -> None:
     dual = get_profile(DUAL_CANDIDATE)
-    roots = list(TRAIN_ROOTS) + list(TRAIN_ROOTS[:0])  # 3 roots
+    roots = list(LEGACY_PILOT_TRAIN_ROOTS)  # 3 pilot roots
     pool = build_pool(
         dual, roots, claim_pass=True, selection_receipt_present=True
     )
@@ -100,6 +100,6 @@ def test_dual_pool_two_workers() -> None:
 
 def test_live_dispatch_refused_by_default() -> None:
     single = get_profile(OFFICIAL_DEFAULT)
-    pool = build_pool(single, TRAIN_ROOTS, claim_pass=True)
+    pool = build_pool(single, LEGACY_PILOT_TRAIN_ROOTS, claim_pass=True)
     with pytest.raises(WorkerPoolError, match="live_dispatch_enabled"):
         assert_ready_for_live_dispatch(pool, single)

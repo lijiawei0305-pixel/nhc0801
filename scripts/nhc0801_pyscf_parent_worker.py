@@ -148,6 +148,9 @@ def main() -> int:
         # Optional full-trajectory dump (M1). Absent => legacy response shape.
         # geomeTRIC callback sees every energy+gradient evaluation (incl. rejected
         # line-search trial steps), not only the accepted optimization path.
+        import time
+
+        t0 = time.perf_counter()
         raw_traj = req.get("trajectory_out_path")
         traj_path: str | None = str(raw_traj) if raw_traj else None
         eval_count = [0]
@@ -201,7 +204,7 @@ def main() -> int:
                 "grad_gate_max": gmax_gate,
                 "grad_gate_rms": grms_gate,
                 "scf_cycles": int(getattr(mf_final, "cycles", 0) or 0),
-                "wall_seconds": 0.0,
+                "wall_seconds": float(time.perf_counter() - t0),
                 "coordinates": [[float(x) for x in row] for row in coords],
                 "xc": xc,
                 "backend": backend,
