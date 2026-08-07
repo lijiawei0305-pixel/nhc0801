@@ -1,12 +1,13 @@
 #!/usr/bin/env python3
-"""Launch Val-only Epoch-0 as 4 endpoint shards on 4 free GPUs.
+"""Launch Val-only Epoch-0: N roots × cation/neutral across GPUs (分开算).
 
 Thin CLI — logic in ``nhc_deprot.pipeline.e0_val_dispatch``.
 
-Example (on server, mlff env):
+Example (on server, mlff env) — full 8-GPU wave (4 roots × 2 endpoints):
 
   PYTHONPATH=src python scripts/nhc0801_e0_val_4gpu.py \\
-    --nhc0801-root $WJW/NHC0801 --batch-id g001
+    --nhc0801-root $WJW/NHC0801 --batch-id g001 \\
+    --val-roots r1,r2,r3,r4 --gpu-ids 0,1,2,3,4,5,6,7 --allow-vasp-share
 
   # plan only (no spawn):
   PYTHONPATH=src python scripts/nhc0801_e0_val_4gpu.py --nhc0801-root $WJW/NHC0801 \\
@@ -25,8 +26,8 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from nhc_deprot.pipeline.e0_val_dispatch import (  # noqa: E402
     E0ValDispatchError,
+    endpoints_as_table,
     launch_val_e0_4gpu,
-    shards_as_table,
 )
 
 
@@ -38,14 +39,14 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument(
         "--val-roots",
         default=None,
-        help="Comma-separated 2 Val roots (default: pilot VALIDATION_ROOTS for g001)",
+        help="Comma-separated Val roots (e.g. 4 roots for 8 endpoints on 8 GPUs)",
     )
     p.add_argument("--parent-backend", choices=("cpu", "gpu"), default="gpu")
     p.add_argument(
         "--max-steps",
         type=int,
-        default=100,
-        help="Parent geomeTRIC max steps (not AIMNet2 GAU_LOOSE budget)",
+        default=250,
+        help="Parent geomeTRIC max steps (GAU_LOOSE_V001 / P2 default 250; not AIMNet2 budget)",
     )
     p.add_argument("--max-gpu", type=int, default=8)
     p.add_argument(
@@ -65,6 +66,19 @@ def main(argv: list[str] | None = None) -> int:
         help="Prefer empty GPUs; fail if must share (see pick_gpus)",
     )
     p.add_argument(
+        "--allow-vasp-share",
+        action="store_true",
+        help=(
+            "If no VASP-free card exists, co-locate on lowest-mem VASP GPUs "
+            "(never kills VASP). Use when machine is fully co-occupied."
+        ),
+    )
+    p.add_argument(
+        "--gpu-ids",
+        default=None,
+        help="Comma-separated GPU indices (skip pick_gpus); e.g. 0,1,2,3,4,5,6,7",
+    )
+    p.add_argument(
         "--dry-run",
         action="store_true",
         help="Print plan and pick GPUs without spawning",
@@ -75,6 +89,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.val_roots:
         roots = [r.strip() for r in str(args.val_roots).split(",") if r.strip()]
     exclude = [int(x) for x in (args.exclude_gpu or [])]
+    gpu_ids = None
+    if args.gpu_ids:
+        gpu_ids = [int(x.strip()) for x in str(args.gpu_ids).split(",") if x.strip()]
 
     try:
         receipt = launch_val_e0_4gpu(
@@ -86,15 +103,17 @@ def main(argv: list[str] | None = None) -> int:
             parent_max_steps=int(args.max_steps),
             max_gpu=int(args.max_gpu),
             exclude_gpus=exclude,
+            gpu_ids=gpu_ids,
             require_free=bool(args.require_free),
             allow_shared=not bool(args.no_shared),
+            allow_vasp_share=bool(args.allow_vasp_share),
             dry_run=bool(args.dry_run),
         )
     except E0ValDispatchError as exc:
         print(json.dumps({"error": str(exc), "status": "FAIL"}, indent=2))
         return 2
 
-    print(shards_as_table(receipt))
+    print(endpoints_as_table(receipt))
     print(json.dumps(receipt, indent=2, sort_keys=True))
     return 0
 

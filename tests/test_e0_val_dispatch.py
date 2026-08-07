@@ -6,17 +6,18 @@ from pathlib import Path
 
 import pytest
 
-from nhc_deprot.data.paths import VALIDATION_ROOTS
+from nhc_deprot.data.paths import LEGACY_PILOT_TRAIN_ROOTS, LEGACY_PILOT_VALIDATION_ROOTS
 from nhc_deprot.pipeline.e0_val_dispatch import (
     E0ValDispatchError,
-    plan_val_endpoint_shards,
+    plan_val_endpoint_jobs,
 )
 from nhc_deprot.resources.gpu_inventory import GpuSlot, pick_gpus
 
 
-def test_plan_val_endpoint_shards_maps_four() -> None:
-    roots = list(VALIDATION_ROOTS)
-    shards = plan_val_endpoint_shards(
+def test_plan_val_endpoint_jobs_maps_four() -> None:
+    # Pilot-size Val (2 roots → 4 endpoints) still used for unit mapping checks.
+    roots = list(LEGACY_PILOT_VALIDATION_ROOTS)
+    shards = plan_val_endpoint_jobs(
         roots,
         gpu_ids=[0, 3, 5, 7],
         log_dir=Path("/tmp/e0_test_logs"),
@@ -30,10 +31,10 @@ def test_plan_val_endpoint_shards_maps_four() -> None:
     assert shards[1].endpoint == "neutral"
 
 
-def test_plan_refuses_wrong_root_count() -> None:
-    with pytest.raises(E0ValDispatchError, match="exactly 2 roots"):
-        plan_val_endpoint_shards(
-            ["ONLY_ONE"],
+def test_plan_refuses_empty_roots() -> None:
+    with pytest.raises(E0ValDispatchError, match=">= 1 root"):
+        plan_val_endpoint_jobs(
+            [],
             gpu_ids=[0, 1, 2, 3],
             log_dir=Path("/tmp/x"),
             batch_id="g001",
@@ -41,11 +42,9 @@ def test_plan_refuses_wrong_root_count() -> None:
 
 
 def test_plan_refuses_train_roots() -> None:
-    from nhc_deprot.data.paths import TRAIN_ROOTS
-
     with pytest.raises(E0ValDispatchError, match="train roots"):
-        plan_val_endpoint_shards(
-            [TRAIN_ROOTS[0], list(VALIDATION_ROOTS)[0]],
+        plan_val_endpoint_jobs(
+            [LEGACY_PILOT_TRAIN_ROOTS[0], list(LEGACY_PILOT_VALIDATION_ROOTS)[0]],
             gpu_ids=[0, 1, 2, 3],
             log_dir=Path("/tmp/x"),
             batch_id="g001",

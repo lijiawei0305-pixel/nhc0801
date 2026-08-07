@@ -8,9 +8,13 @@ from pathlib import Path
 import pytest
 
 from nhc_deprot.contracts.parent_protocol import PROTOCOL_SHA256
-from nhc_deprot.data.paths import OFFICIAL_AIMNET2_WEIGHT_SHA256, VALIDATION_ROOTS
+from nhc_deprot.data.paths import (
+    LEGACY_PILOT_VALIDATION_ROOTS,
+    OFFICIAL_AIMNET2_WEIGHT_SHA256,
+)
 from nhc_deprot.generation.layout import init_generation
 from nhc_deprot.pipeline.epoch0_runner import (
+    Epoch0Config,
     Epoch0Error,
     plan_epoch0_paths,
     run_epoch0_campaign,
@@ -24,15 +28,21 @@ from nhc_deprot.pipeline.scientific_validation import SimulatedAimnet2Engine
 
 def test_plan_epoch0_paths(tmp_path: Path) -> None:
     layout, _, _ = init_generation(nhc0801_root=tmp_path / "NHC0801")
-    plan = plan_epoch0_paths(layout)
+    plan = plan_epoch0_paths(
+        layout, validation_roots=list(LEGACY_PILOT_VALIDATION_ROOTS)
+    )
     assert plan["mindmap_step"] == 3
-    assert len(plan["roots"]) == len(VALIDATION_ROOTS)
+    assert len(plan["roots"]) == len(LEGACY_PILOT_VALIDATION_ROOTS)
     assert plan["official_weight_sha256"] == OFFICIAL_AIMNET2_WEIGHT_SHA256
 
 
 def test_dry_run_epoch0_campaign(tmp_path: Path) -> None:
     layout, _, _ = init_generation(nhc0801_root=tmp_path / "NHC0801")
-    camp = run_epoch0_campaign(layout=layout, dry_run=True)
+    camp = run_epoch0_campaign(
+        layout=layout,
+        dry_run=True,
+        config=Epoch0Config(validation_roots=LEGACY_PILOT_VALIDATION_ROOTS),
+    )
     assert camp["status"] == "DRY_RUN_EPOCH0_PASS"
     assert camp["dry_run"] is True
     assert camp["live_chemistry"] is False
@@ -48,7 +58,7 @@ def test_dry_run_epoch0_campaign(tmp_path: Path) -> None:
         0.0, abs=1e-9
     )
 
-    for root_id in VALIDATION_ROOTS:
+    for root_id in LEGACY_PILOT_VALIDATION_ROOTS:
         path = layout.epoch0_dir / root_id / "epoch0_root_receipt.json"
         assert path.is_file()
         payload = json.loads(path.read_text(encoding="utf-8"))

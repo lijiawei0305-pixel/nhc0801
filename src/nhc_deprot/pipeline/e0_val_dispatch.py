@@ -32,7 +32,9 @@ class E0ValDispatchError(RuntimeError):
 
 
 @dataclass(frozen=True, slots=True)
-class EndpointShard:
+class EndpointJob:
+    """One (root, cation|neutral) job on one GPU."""
+
     root_id: str
     endpoint: str
     gpu_index: int
@@ -41,6 +43,10 @@ class EndpointShard:
     @property
     def key(self) -> str:
         return f"{self.root_id}:{self.endpoint}"
+
+
+# Deprecated alias — do not use in new user-facing text.
+EndpointShard = EndpointJob
 
 
 def _utc() -> str:
@@ -57,35 +63,41 @@ def default_val_roots_for_batch(batch_id: str) -> tuple[str, ...]:
     )
 
 
-def plan_val_endpoint_shards(
+def plan_val_endpoint_jobs(
     val_roots: Sequence[str],
     *,
     gpu_ids: Sequence[int],
     log_dir: Path,
     batch_id: str,
-) -> list[EndpointShard]:
-    """Map 2 roots × 2 endpoints onto exactly 4 GPU ids (in given order)."""
+) -> list[EndpointJob]:
+    """Map N Val roots × 2 endpoints onto GPU ids (cycle if fewer GPUs).
+
+    Legacy pilot used N=2 with exactly 4 GPUs (one endpoint per card). Larger
+    Val sets (TVT resplit) still produce 2N jobs; GPUs are assigned round-robin
+    over ``gpu_ids``.
+    """
     roots = [r.strip() for r in val_roots if r and r.strip()]
-    if len(roots) != 2:
+    if len(roots) < 1:
         raise E0ValDispatchError(
-            f"Val batch e0 fan-out requires exactly 2 roots, got {len(roots)}: {roots}"
+            f"Val batch e0 needs >= 1 root, got {len(roots)}: {roots}"
         )
     train = frozenset(TRAIN_ROOTS)
     bad = [r for r in roots if r in train]
     if bad:
         raise E0ValDispatchError(f"REFUSED train roots in Val e0 dispatch: {bad}")
-    if len(gpu_ids) != 4:
-        raise E0ValDispatchError(f"need exactly 4 GPU ids, got {list(gpu_ids)}")
+    gpus = [int(g) for g in gpu_ids]
+    if not gpus:
+        raise E0ValDispatchError(f"need >= 1 GPU id, got {list(gpu_ids)}")
 
     log_dir.mkdir(parents=True, exist_ok=True)
-    shards: list[EndpointShard] = []
+    jobs: list[EndpointJob] = []
     k = 0
     for root_id in roots:
         for ep in ENDPOINTS:
-            gpu = int(gpu_ids[k])
+            gpu = gpus[k % len(gpus)]
             tag = f"e0_{batch_id}_{root_id[:8]}_{ep}_gpu{gpu}"
-            shards.append(
-                EndpointShard(
+            jobs.append(
+                EndpointJob(
                     root_id=root_id,
                     endpoint=ep,
                     gpu_index=gpu,
@@ -93,7 +105,11 @@ def plan_val_endpoint_shards(
                 )
             )
             k += 1
-    return shards
+    return jobs
+
+
+# Deprecated alias
+plan_val_endpoint_shards = plan_val_endpoint_jobs
 
 
 def launch_val_e0_4gpu(
@@ -103,45 +119,58 @@ def launch_val_e0_4gpu(
     batch_id: str,
     val_roots: Sequence[str] | None = None,
     parent_backend: str = "gpu",
-    parent_max_steps: int = 100,
+    parent_max_steps: int = 250,
     max_gpu: int = 8,
     exclude_gpus: Sequence[int] | None = None,
     gpu_ids: Sequence[int] | None = None,
     require_free: bool = False,
     allow_shared: bool = True,
+    allow_vasp_share: bool = False,
     dry_run: bool = False,
     python_exe: str | None = None,
 ) -> dict[str, Any]:
-    """Pick 4 GPUs and spawn one e0 endpoint-shard process per GPU.
+    """Spawn Val e0 endpoint jobs across GPUs (cation/neutral 分开算).
 
-    If *gpu_ids* is provided (length 4), use it as-is (caller already selected).
-    Returns a plan receipt (does not wait for chemistry to finish).
+    One process per (root, endpoint). GPUs are assigned round-robin over
+    ``gpu_ids`` (or auto-picked). Prefer ``len(gpu_ids) == n_endpoints`` so
+    each endpoint gets its own card (e.g. 4 roots × 2 endpoints → 8 GPUs).
+
+    If *gpu_ids* is provided (length >= 1), use it as-is. Otherwise pick
+    ``min(n_endpoints, max_gpu)`` cards via :func:`pick_gpus`.
+
+    ``allow_vasp_share``: only when the machine is fully VASP-occupied; co-locate
+    without killing VASP (see ``gpu_inventory.pick_gpus``).
     """
     roots = (
         list(val_roots)
         if val_roots is not None
         else list(default_val_roots_for_batch(batch_id))
     )
+    n_endpoints = len(roots) * len(ENDPOINTS)
+    if n_endpoints < 1:
+        raise E0ValDispatchError("no endpoints to launch (empty val_roots)")
     inv = inventory_as_dict(max_gpu=max_gpu)
     if gpu_ids is not None:
         gpus = [int(x) for x in gpu_ids]
-        if len(gpus) != 4:
-            raise E0ValDispatchError(f"gpu_ids must have length 4, got {gpus}")
+        if len(gpus) < 1:
+            raise E0ValDispatchError(f"gpu_ids must be non-empty, got {gpus}")
     else:
+        n_pick = min(int(n_endpoints), int(max_gpu))
         try:
             gpus = pick_gpus(
-                4,
+                n_pick,
                 max_gpu=max_gpu,
                 exclude=exclude_gpus,
                 allow_shared=allow_shared,
                 require_free=require_free,
+                allow_vasp_share=allow_vasp_share,
             )
         except GpuInventoryError as exc:
             raise E0ValDispatchError(str(exc)) from exc
 
     gen_root = Path(nhc0801_root) / "runs" / generation_id
     log_dir = gen_root / "logs" / "e0_val_4gpu"
-    shards = plan_val_endpoint_shards(
+    jobs = plan_val_endpoint_jobs(
         roots, gpu_ids=gpus, log_dir=log_dir, batch_id=batch_id
     )
 
@@ -151,7 +180,7 @@ def launch_val_e0_4gpu(
     env_base["PYTHONUNBUFFERED"] = "1"
 
     launched: list[dict[str, Any]] = []
-    for sh in shards:
+    for job in jobs:
         cmd = [
             py,
             "-u",
@@ -164,22 +193,22 @@ def launch_val_e0_4gpu(
             "--batch-id",
             batch_id,
             "--val-roots",
-            sh.root_id,
+            job.root_id,
             "--endpoint",
-            sh.endpoint,
+            job.endpoint,
             "--parent-backend",
             parent_backend,
             "--cuda-device",
-            str(sh.gpu_index),
+            str(job.gpu_index),
             "--max-steps",
             str(int(parent_max_steps)),
         ]
         entry: dict[str, Any] = {
-            "key": sh.key,
-            "root_id": sh.root_id,
-            "endpoint": sh.endpoint,
-            "gpu_index": sh.gpu_index,
-            "log_path": str(sh.log_path),
+            "key": job.key,
+            "root_id": job.root_id,
+            "endpoint": job.endpoint,
+            "gpu_index": job.gpu_index,
+            "log_path": str(job.log_path),
             "cmd": cmd,
         }
         if dry_run:
@@ -187,9 +216,9 @@ def launch_val_e0_4gpu(
             entry["status"] = "DRY_RUN_PLANNED"
         else:
             env = env_base.copy()
-            env["CUDA_VISIBLE_DEVICES"] = str(sh.gpu_index)
-            sh.log_path.parent.mkdir(parents=True, exist_ok=True)
-            log_fh = sh.log_path.open("w", encoding="utf-8")
+            env["CUDA_VISIBLE_DEVICES"] = str(job.gpu_index)
+            job.log_path.parent.mkdir(parents=True, exist_ok=True)
+            log_fh = job.log_path.open("w", encoding="utf-8")
             proc = subprocess.Popen(
                 cmd,
                 cwd=str(nhc0801_root),
@@ -210,17 +239,21 @@ def launch_val_e0_4gpu(
         "batch_id": batch_id,
         "generation_id": generation_id,
         "val_roots": roots,
-        "n_endpoints": 4,
+        "n_endpoints": len(jobs),
         "gpu_ids": gpus,
         "parent_backend": parent_backend,
         "parent_max_steps": parent_max_steps,
         "require_free": require_free,
         "allow_shared": allow_shared,
+        "allow_vasp_share": allow_vasp_share,
         "dry_run": dry_run,
         "inventory": inv,
+        "endpoints": launched,
+        # backward key for older daemons
         "shards": launched,
         "notes": [
-            "Val e0: 2 roots × 2 endpoints → 4 GPUs (AGENTS hard rule)",
+            "Val e0: N roots × cation/neutral 分开算 → round-robin over gpu_ids",
+            "Prefer 1 endpoint per GPU (e.g. 4 roots → 8 GPUs when max_gpu=8)",
             "GPU pick: no-VASP, free/low-mem first (gpu_inventory.pick_gpus)",
             "Does not kill daemons or other users' jobs",
             "AIMNet2 GAU_LOOSE budget from GAU_LOOSE_V001.yaml (not parent --max-steps)",
@@ -236,14 +269,19 @@ def launch_val_e0_4gpu(
     return receipt
 
 
-def shards_as_table(receipt: dict[str, Any]) -> str:
+def endpoints_as_table(receipt: dict[str, Any]) -> str:
     lines = [
         "root_id | endpoint | gpu | pid | log",
         "--- | --- | ---: | ---: | ---",
     ]
-    for s in receipt.get("shards") or []:
+    rows = receipt.get("endpoints") or receipt.get("shards") or []
+    for s in rows:
         lines.append(
             f"{s.get('root_id')} | {s.get('endpoint')} | {s.get('gpu_index')} | "
             f"{s.get('pid')} | {s.get('log_path')}"
         )
     return "\n".join(lines)
+
+
+# Deprecated alias
+shards_as_table = endpoints_as_table

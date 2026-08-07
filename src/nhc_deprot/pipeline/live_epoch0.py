@@ -64,10 +64,13 @@ class LiveAimnet2GauLooseEngine:
         multiplicity: int,
         checkpoint_id: str,
     ) -> dict[str, Any]:
+        import time
+
         from aimnet.calculators import AIMNet2ASE
         from ase import Atoms
         from ase.optimize import LBFGS
 
+        t0 = time.perf_counter()
         atoms = Atoms(symbols=list(elements), positions=np.asarray(coordinates, dtype=float))
         calc = AIMNet2ASE(str(self.weight_path), charge=charge, mult=multiplicity)
         atoms.calc = calc
@@ -101,7 +104,7 @@ class LiveAimnet2GauLooseEngine:
             "steps": steps,
             "coordinates": pos.tolist(),
             "energy_ev": float(atoms.get_potential_energy()),
-            "wall_seconds": 0.0,
+            "wall_seconds": float(time.perf_counter() - t0),
             "atom_identity_preserved": True,
             "topology_valid": True,
             "coordinates_finite": bool(np.isfinite(pos).all()),
@@ -123,7 +126,7 @@ class LiveParentP01Engine:
     def __init__(
         self,
         *,
-        max_steps: int = 100,
+        max_steps: int = 250,
         pyscf_python: str = "/home/plab/test/WJW/env/conda/gpupyscf/bin/python",
         worker_script: str | None = None,
         backend: str = "cpu",
@@ -224,22 +227,31 @@ class LiveParentP01Engine:
         charge: int,
         multiplicity: int,
         continue_from_handoff: bool,
+        trajectory_out_path: str | None = None,
     ) -> dict[str, Any]:
+        """Run parent GAU optimization via worker.
+
+        When ``trajectory_out_path`` is set, the worker uses geomeTRIC callback
+        and returns real ``opt_steps`` (``opt_steps_is_maxcap=False``). Absent
+        path keeps legacy maxcap behaviour (RETRO G4/G5 default-compatible).
+        """
+
         del root_id, endpoint, continue_from_handoff
-        out = self._call(
-            {
-                "op": "optimize_to_final_gau",
-                "elements": list(elements),
-                "coordinates": [list(map(float, row)) for row in coordinates],
-                "charge": charge,
-                "multiplicity": multiplicity,
-                "max_steps": self.max_steps,
-                "basis": BASIS,
-                "xc": "wb97m-d3bj",
-                "grid": GRID_LEVEL,
-                "conv_tol": SCF_CONV_TOL,
-            }
-        )
+        body: dict[str, Any] = {
+            "op": "optimize_to_final_gau",
+            "elements": list(elements),
+            "coordinates": [list(map(float, row)) for row in coordinates],
+            "charge": charge,
+            "multiplicity": multiplicity,
+            "max_steps": self.max_steps,
+            "basis": BASIS,
+            "xc": "wb97m-d3bj",
+            "grid": GRID_LEVEL,
+            "conv_tol": SCF_CONV_TOL,
+        }
+        if trajectory_out_path:
+            body["trajectory_out_path"] = str(trajectory_out_path)
+        out = self._call(body)
         out["parent_protocol_sha256"] = PROTOCOL_SHA256
         out["functional"] = FUNCTIONAL
         out["basis"] = BASIS

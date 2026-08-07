@@ -133,6 +133,19 @@ def _parent_engine(
     return LiveParentP01Engine(**parent_kw)
 
 
+def endpoint_result_path(root_dir: Path, endpoint: str) -> Path:
+    """Preferred path for one endpoint result; falls back to legacy ``*_shard.json``."""
+
+    ep = str(endpoint).strip().lower()
+    preferred = root_dir / f"{ep}.json"
+    if preferred.is_file():
+        return preferred
+    legacy = root_dir / f"{ep}_shard.json"
+    if legacy.is_file():
+        return legacy
+    return preferred
+
+
 def run_e0_single_endpoint(
     *,
     nhc0801_root: Path,
@@ -140,16 +153,16 @@ def run_e0_single_endpoint(
     batch_id: str,
     root_id: str,
     endpoint: str,
-    max_steps: int = 100,
+    max_steps: int = 250,
     weight: Path = OFFICIAL_WEIGHT,
     gold_dirs: Sequence[Path] | None = None,
     parent_backend: str = "cpu",
     cuda_device: int | None = None,
 ) -> dict:
-    """Run Epoch-0 pure+e0 routes for **one** endpoint on one GPU (4-way parallel).
+    """Run Epoch-0 pure+e0 for **one** endpoint on one GPU (cation/neutral 分开算).
 
-    Writes ``epoch0/<root>/<endpoint>_shard.json``. When both cation and neutral
-    shards exist, assembles ``epoch0_root_receipt.json`` for that root.
+    Writes ``epoch0/<root>/<endpoint>.json``. When both cation and neutral exist,
+    merges into ``root.json`` (and legacy ``epoch0_root_receipt.json`` for readers).
     """
     roots = refuse_train_roots([root_id])
     rid = roots[0]
@@ -178,7 +191,7 @@ def run_e0_single_endpoint(
     cfg = Epoch0Config(validation_roots=(rid,))
 
     print(
-        f"[e0-shard] {bid} root={rid} endpoint={ep} "
+        f"[e0] {bid} root={rid} endpoint={ep} "
         f"cuda={cuda_device} parent={parent_backend}",
         flush=True,
     )
@@ -200,8 +213,8 @@ def run_e0_single_endpoint(
     )
     root_dir = work_layout.epoch0_dir / rid
     root_dir.mkdir(parents=True, exist_ok=True)
-    shard = {
-        "schema": "nhc0801-epoch0-endpoint-shard-v1",
+    endpoint_payload = {
+        "schema": "nhc0801-epoch0-endpoint-v1",
         "batch_id": bid,
         "root_id": rid,
         "endpoint": ep,
@@ -212,11 +225,12 @@ def run_e0_single_endpoint(
         "epoch0_route": e0_r.as_dict(),
         "status": "PASS" if (not pure_r.catastrophic and not e0_r.catastrophic) else "FAILED",
     }
-    shard_path = root_dir / f"{ep}_shard.json"
-    write_json(shard_path, shard, overwrite=True)
-    print(f"[e0-shard] wrote {shard_path} status={shard['status']}", flush=True)
+    # Preferred: cation.json / neutral.json. Legacy *_shard.json kept readable only.
+    endpoint_path = root_dir / f"{ep}.json"
+    write_json(endpoint_path, endpoint_payload, overwrite=True)
+    print(f"[e0] wrote {endpoint_path} status={endpoint_payload['status']}", flush=True)
 
-    merge = try_merge_root_shards(
+    merge = try_merge_root_endpoints(
         work_layout.epoch0_dir / rid,
         root_id=rid,
         checkpoint_id=cfg.checkpoint_id,
@@ -224,25 +238,32 @@ def run_e0_single_endpoint(
     )
     if merge is not None:
         print(
-            f"[e0-shard] merged root receipt status={merge.get('status')} path={merge.get('path')}",
+            f"[e0] merged root result status={merge.get('status')} path={merge.get('path')}",
             flush=True,
         )
-    return {"shard": shard, "shard_path": str(shard_path), "root_merge": merge}
+    return {
+        "endpoint": endpoint_payload,
+        "endpoint_path": str(endpoint_path),
+        # backward keys for older CLIs/watchers
+        "shard": endpoint_payload,
+        "shard_path": str(endpoint_path),
+        "root_merge": merge,
+    }
 
 
-def try_merge_root_shards(
+def try_merge_root_endpoints(
     root_dir: Path,
     *,
     root_id: str,
     checkpoint_id: str,
     official_weight_sha256: str,
 ) -> dict | None:
-    """If both endpoint shards exist, write epoch0_root_receipt.json."""
+    """If cation.json + neutral.json both exist, write root.json (+ legacy name)."""
     from nhc_deprot.contracts.parent_protocol import PROTOCOL_SHA256
     from nhc_deprot.pipeline.scientific_validation import EndpointRouteReceipt
 
-    cat_p = root_dir / "cation_shard.json"
-    neu_p = root_dir / "neutral_shard.json"
+    cat_p = endpoint_result_path(root_dir, "cation")
+    neu_p = endpoint_result_path(root_dir, "neutral")
     if not (cat_p.is_file() and neu_p.is_file()):
         return None
 
@@ -269,6 +290,9 @@ def try_merge_root_shards(
                 else None
             ),
             parent_opt_steps=int(raw.get("parent_opt_steps") or 0),
+            parent_opt_steps_is_maxcap=bool(
+                raw.get("parent_opt_steps_is_maxcap", True)
+            ),
             parent_scf_cycles=int(raw.get("parent_scf_cycles") or 0),
             wall_seconds=float(raw.get("wall_seconds") or 0.0),
             identity_and_structure_ok=bool(raw.get("identity_and_structure_ok", False)),
@@ -333,11 +357,18 @@ def try_merge_root_shards(
             "parent_opt_step_reduction_fraction": step_reduction,
         },
         "status": status,
-        "merged_from_shards": True,
+        "merged_from_endpoints": True,
     }
-    out = root_dir / "epoch0_root_receipt.json"
+    # Preferred short name + legacy path used by rebuild/sci-val loaders.
+    out = root_dir / "root.json"
     write_json(out, root_payload, overwrite=True)
-    return {"status": status, "path": str(out)}
+    legacy = root_dir / "epoch0_root_receipt.json"
+    write_json(legacy, root_payload, overwrite=True)
+    return {"status": status, "path": str(out), "legacy_path": str(legacy)}
+
+
+# Backward-compatible alias (do not use in new code / user-facing text).
+try_merge_root_shards = try_merge_root_endpoints
 
 
 def run_e0_for_val_roots(
@@ -346,7 +377,7 @@ def run_e0_for_val_roots(
     generation_id: str,
     val_roots: Sequence[str],
     batch_id: str,
-    max_steps: int = 100,
+    max_steps: int = 250,
     weight: Path = OFFICIAL_WEIGHT,
     gold_dirs: Sequence[Path] | None = None,
     parent_backend: str = "cpu",
@@ -443,15 +474,15 @@ def main(argv: list[str] | None = None) -> int:
         required=True,
         help="Comma-separated Validation InChIKeys (Train roots refused)",
     )
-    ap.add_argument("--max-steps", type=int, default=100)
+    ap.add_argument("--max-steps", type=int, default=250)
     ap.add_argument("--parent-backend", choices=("cpu", "gpu"), default="cpu")
     ap.add_argument("--cuda-device", type=int, default=None)
     ap.add_argument(
         "--endpoint",
         default=None,
         help=(
-            "Optional single endpoint (cation|neutral) for 1-GPU-per-endpoint "
-            "sharding. Requires exactly one --val-roots entry."
+            "Optional single endpoint (cation|neutral): one GPU runs one endpoint. "
+            "Requires exactly one --val-roots entry."
         ),
     )
     ap.add_argument(
@@ -465,7 +496,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.endpoint is not None:
             if len(roots) != 1:
                 raise E0ValOnlyError(
-                    "--endpoint shard mode requires exactly one --val-roots root"
+                    "--endpoint mode requires exactly one --val-roots root"
                 )
             receipt = run_e0_single_endpoint(
                 nhc0801_root=args.nhc0801_root,
@@ -495,17 +526,20 @@ def main(argv: list[str] | None = None) -> int:
         return 1
     bid = normalize_epoch0_batch_id(args.batch_id)
     if args.endpoint is not None:
-        shard = receipt.get("shard") if isinstance(receipt, dict) else None
-        st = (shard or {}).get("status") if isinstance(shard, dict) else "UNKNOWN"
+        ep_payload = None
+        if isinstance(receipt, dict):
+            ep_payload = receipt.get("endpoint") or receipt.get("shard")
+        st = (ep_payload or {}).get("status") if isinstance(ep_payload, dict) else "UNKNOWN"
         print(
             json.dumps(
                 {
-                    "mode": "endpoint_shard",
+                    "mode": "endpoint",
                     "status": st,
                     "batch_id": bid,
                     "root_id": roots[0],
                     "endpoint": args.endpoint,
-                    "shard_path": receipt.get("shard_path"),
+                    "endpoint_path": receipt.get("endpoint_path")
+                    or receipt.get("shard_path"),
                     "root_merge": receipt.get("root_merge"),
                 },
                 indent=2,
